@@ -1,0 +1,24 @@
+{
+  "name": "rn-modal-manager",
+  "version": "0.1.0",
+  "description": "A modal manager for React Native applications",
+  "main": "index.ts",
+  "types": "index.ts",
+  "sideEffects": false,
+  "peerDependencies": {
+    "react": ">=17",
+    "react-native": ">=0.68"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Sauban Lawal",
+  "dependencies": {
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "typescript": "^5.9.3"
+  }
+}
