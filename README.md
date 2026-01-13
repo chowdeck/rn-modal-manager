@@ -48,10 +48,97 @@ export function ExampleScreen() {
 ```
 
 ## How it works
-1. Each mounted `<AppModal/>` registers itself in the global queue through `useModalStore`.
-2. The queue is sorted by `priority` (descending) and then by `openedAt` to keep FIFO order when priorities tie.
-3. Only the modal at the top of the queue is rendered with `visible=true`. All others are hidden.
-4. When the modal unmounts or `visible` flips to `false`, it removes itself from the queue automatically.
+
+The modal manager operates through a centralized queue system powered by a Zustand store:
+
+1. **Registration**: Each mounted `<AppModal/>` registers itself in a global queue through `useModalStore` when its `visible` prop becomes `true`.
+
+2. **Priority-based ordering**: The queue is sorted by `priority` (descending order) and then by `openedAt` timestamp to maintain FIFO order when priorities tie.
+
+3. **Single modal guarantee**: Only the modal at the top of the queue (highest priority, earliest if tied) is rendered with `visible=true`. All others remain hidden but mounted (unless `unmountOnHide=true`).
+
+4. **Automatic cleanup**: When a modal's `visible` prop becomes `false` or the component unmounts, it automatically removes itself from the queue, allowing the next modal to become visible.
+
+5. **Performance optimization**: With `unmountOnHide=true` (default), hidden modals are completely unmounted to save resources.
+
+This design ensures predictable modal behavior without the complexity of manual state coordination between different parts of your app.
+
+## How to use it
+
+### Basic usage
+
+1. **Wrap your modals with `AppModal`**: Replace React Native's `Modal` component with `AppModal` and add a `name` and `priority`.
+
+```tsx
+import { AppModal } from 'rn-modal-manager'
+
+<AppModal 
+  name="confirmation-dialog" 
+  visible={isVisible} 
+  priority={10}
+  onRequestClose={() => setIsVisible(false)}
+>
+  <YourModalContent />
+</AppModal>
+```
+
+2. **Set priorities wisely**: Higher numbers have precedence. Common priority patterns:
+   - System alerts/errors: `100`
+   - User confirmation dialogs: `50` 
+   - Loading overlays: `30`
+   - Regular modals: `10`
+   - Background modals: `1`
+
+### Advanced patterns
+
+**Imperative control from business logic:**
+```tsx
+import { useModalStore } from 'rn-modal-manager'
+
+// Show a modal programmatically
+function triggerErrorModal() {
+  const { show } = useModalStore.getState()
+  show('error-modal', 100)
+}
+
+// Hide a specific modal
+function closeModal(modalId: string) {
+  const { hide } = useModalStore.getState()
+  hide(modalId)
+}
+```
+
+**Conditional modal chains:**
+```tsx
+function PaymentFlow() {
+  const [step, setStep] = useState(1)
+  
+  return (
+    <>
+      <AppModal name="payment-form" visible={step === 1} priority={20}>
+        <PaymentForm onNext={() => setStep(2)} />
+      </AppModal>
+      
+      <AppModal name="payment-confirmation" visible={step === 2} priority={20}>
+        <ConfirmationScreen onComplete={() => setStep(0)} />
+      </AppModal>
+    </>
+  )
+}
+```
+
+**Debug modal queue in development:**
+```tsx
+function ModalDebugger() {
+  const queue = useModalStore(state => state.activeQueue)
+  
+  if (__DEV__) {
+    console.log('Active modals:', queue.map(m => `${m.id} (priority: ${m.priority})`))
+  }
+  
+  return null
+}
+```
 
 ## `AppModal` props
 | Prop | Type | Default | Description |
