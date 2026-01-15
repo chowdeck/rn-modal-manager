@@ -1,23 +1,20 @@
 // modalStore.ts
 import { create } from 'zustand'
-
-type ActiveModal = {
-  id: string
-  priority: number
-  openedAt: number
-}
+import { ActiveModal } from './types'
 
 type ModalState = {
   activeQueue: ActiveModal[]
 
-  show: (id: string, priority: number) => void
+  show: (id: string, priority: number, stackable: boolean) => void
   hide: (id: string) => void
+  
+  getVisibleModals: () => ActiveModal[]
 }
 
 export const useModalStore = create<ModalState>((set, get) => ({
   activeQueue: [],
 
-  show: (id, priority) =>
+  show: (id, priority, stackable) =>
     set(state => {
       // already active → no change
       if (state.activeQueue.some(m => m.id === id)) {
@@ -30,6 +27,7 @@ export const useModalStore = create<ModalState>((set, get) => ({
           id,
           priority,
           openedAt: Date.now(),
+          stackable
         },
       ]
 
@@ -48,4 +46,26 @@ export const useModalStore = create<ModalState>((set, get) => ({
     set(state => ({
       activeQueue: state.activeQueue.filter(m => m.id !== id),
     })),
+
+  getVisibleModals: () => {
+    const state = get()
+    const queue = state.activeQueue
+    
+    if (queue.length === 0) return []
+    
+    // First modal is always visible
+    const visible: ActiveModal[] = [queue[0]]
+    
+    // If first modal is not stackable, only it is visible
+    if (!queue[0].stackable) return visible
+    
+    // If first modal is stackable, continue checking subsequent modals
+    for (let i = 1; i < queue.length; i++) {
+      // Stop if we encounter a non-stackable modal
+      if (!queue[i].stackable) break
+      visible.push(queue[i])
+    }
+    
+    return visible
+  },
 }))

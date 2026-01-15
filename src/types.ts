@@ -11,6 +11,13 @@ export type ManagedModal = {
   onClose?: () => void
 }
 
+export type ActiveModal = {
+  id: string
+  priority: number
+  openedAt: number
+  stackable: boolean
+}
+
 
 export type ModalEntry = {
   id: string

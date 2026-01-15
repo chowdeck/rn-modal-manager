@@ -4,23 +4,33 @@ import { useModalStore } from './modalStore'
 import { AppModalProps } from './types'
 import { useShallow } from 'zustand/react/shallow'
 
-export function AppModal({
+function AppModalComponent({
   visible,
   priority = 0,
   name = '',
+  stackable = false,
   unmountOnHide = true,
   children,
   ...props
 }: AppModalProps) {
-  const modalId = name.length ? name : `modal-${Math.random().toString(36).substr(2, 9)}`;
+  const modalId =  React.useMemo(
+    () => name.length ? name : `modal-${Math.random().toString(36).substr(2, 9)}`,
+    [name]
+  );
 
-  const queue = useModalStore(useShallow(s => s.activeQueue))
   const show = useModalStore(s => s.show)
   const hide = useModalStore(s => s.hide)
+  
+  // Only re-render when this specific modal's visibility changes
+  const isVisible = useModalStore(
+    useShallow(
+      s => s.getVisibleModals().some(m => m.id === modalId)
+    )
+  )
 
   React.useEffect(() => {
     if (visible) {
-      show(modalId, priority)
+      show(modalId, priority, stackable)
     } else {
       hide(modalId)
     }
@@ -28,25 +38,15 @@ export function AppModal({
     return () => {
       hide(modalId)
     }
-  }, [visible, modalId, show, hide])
+  }, [visible, modalId, priority, stackable, show, hide])
 
   const onRequestClose = React.useCallback((e: any) => {
-      if(props?.onRequestClose){
-        props.onRequestClose(e)
-      } else {
-        hide(modalId)
-      }
-  }, [modalId, hide])
-
-  if (__DEV__ && queue?.length > 1) {
-    console.log("--- [ModalSystem] Multiple modal active ---", queue.length, queue.map(m => m.id))
-  }
-
-  const isVisible = queue[0]?.id === modalId;
-
-  if (__DEV__ && isVisible){
-    console.log(`[ModalSystem] Modal ${modalId} isVisible:`, isVisible)
-  }
+    if (props?.onRequestClose) {
+      props.onRequestClose(e)
+    } else {
+      hide(modalId)
+    }
+  }, [modalId, hide, props])
 
   if (unmountOnHide && !isVisible) {
     return null
@@ -58,3 +58,5 @@ export function AppModal({
     </RNModal>
   )
 }
+
+export const AppModal = React.memo(AppModalComponent);
