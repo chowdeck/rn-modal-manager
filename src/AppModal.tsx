@@ -53,7 +53,7 @@ function AppModalComponent({
   }
 
   return (
-    <RNModal {...props} visible={isVisible} onRequestClose={onRequestClose}>
+    <RNModal {...props} visible={isVisible} onRequestClose={onRequestClose} testID={modalId}>
       {children}
     </RNModal>
   )
