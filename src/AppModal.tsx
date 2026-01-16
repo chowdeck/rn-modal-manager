@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Modal as RNModal } from 'react-native'
 import { useModalStore } from './modalStore'
 import { AppModalProps } from './types'
-import { useShallow } from 'zustand/react/shallow'
+
 
 function AppModalComponent({
   visible,
@@ -11,10 +11,11 @@ function AppModalComponent({
   stackable = false,
   unmountOnHide = true,
   children,
+  onRequestClose: onRequestCloseProp,
   ...props
 }: AppModalProps) {
-  const modalId =  React.useMemo(
-    () => name.length ? name : `modal-${Math.random().toString(36).substr(2, 9)}`,
+  const modalId = React.useMemo(
+    () => name.length ? name : `modal-${Math.random().toString(36).slice(2, 11)}`,
     [name]
   );
 
@@ -23,9 +24,7 @@ function AppModalComponent({
   
   // Only re-render when this specific modal's visibility changes
   const isVisible = useModalStore(
-    useShallow(
       s => s.getVisibleModals().some(m => m.id === modalId)
-    )
   )
 
   React.useEffect(() => {
@@ -41,12 +40,11 @@ function AppModalComponent({
   }, [visible, modalId, priority, stackable, show, hide])
 
   const onRequestClose = React.useCallback((e: any) => {
-    if (props?.onRequestClose) {
-      props.onRequestClose(e)
-    } else {
-      hide(modalId)
+    if (onRequestCloseProp) {
+      onRequestCloseProp(e)
     }
-  }, [modalId, hide, props])
+    hide(modalId)
+  }, [modalId, hide, onRequestCloseProp])
 
   if (unmountOnHide && !isVisible) {
     return null

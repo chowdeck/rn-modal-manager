@@ -179,17 +179,17 @@ describe('modalStore', () => {
       expect(visible.map(m => m.id)).toEqual(['stackable-1', 'stackable-2']);
     });
 
-    test('stops before first non-stackable modal in sequence', () => {
+    test('skip non-stackable modal in sequence', () => {
       const { show, getVisibleModals } = useModalStore.getState();
 
       show('stackable-first', 10, true);
       show('non-stackable', 5, false);
       show('stackable-after', 1, true);
 
-      // Non-stackable modal stops the chain - only stackable modals before it are visible
+      // Non-stackable modal doesn't block the chain - only stackable modals are visible
       const visible = getVisibleModals();
-      expect(visible).toHaveLength(1);
-      expect(visible.map(m => m.id)).toEqual(['stackable-first']);
+      expect(visible).toHaveLength(2);
+      expect(visible.map(m => m.id)).toEqual(['stackable-first', 'stackable-after']);
     });
 
     test('handles mixed stackable sequence correctly', () => {
@@ -198,12 +198,12 @@ describe('modalStore', () => {
       show('s1', 10, true);
       show('s2', 9, true);
       show('s3', 8, true);
-      show('blocker', 7, false);
+      show('us1', 7, false);
       show('s4', 6, true);
 
-      // Only stackable modals before the blocker are visible
+      // Only stackable modals are visible
       const visible = getVisibleModals();
-      expect(visible.map(m => m.id)).toEqual(['s1', 's2', 's3']);
+      expect(visible.map(m => m.id)).toEqual(['s1', 's2', 's3', 's4']);
     });
   });
 });

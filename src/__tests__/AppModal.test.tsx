@@ -102,7 +102,7 @@ describe('AppModal', () => {
       });
 
 
-      test('does not hide modal when custom onRequestClose is provided', () => {
+      test('should auto hide modal when custom onRequestClose is provided as well', () => {
         const mockOnRequestClose = jest.fn();
 
         render(
@@ -119,8 +119,8 @@ describe('AppModal', () => {
         fireEvent(modal, 'requestClose');
 
 
-        // Modal should still be in queue because custom handler doesn't hide it
-        expect(useModalStore.getState().activeQueue).toHaveLength(1);
+        // Modal should be removed from queue and mock handler called
+        expect(useModalStore.getState().activeQueue).toHaveLength(0);
         expect(mockOnRequestClose).toHaveBeenCalled();
       });
   });

@@ -61,8 +61,8 @@ export const useModalStore = create<ModalState>((set, get) => ({
     
     // If first modal is stackable, continue checking subsequent modals
     for (let i = 1; i < queue.length; i++) {
-      // Stop if we encounter a non-stackable modal
-      if (!queue[i].stackable) break
+      // Skip a non-stackable modal and add next stackable ones
+      if (!queue[i].stackable) continue
       visible.push(queue[i])
     }
     
