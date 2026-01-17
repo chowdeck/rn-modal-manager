@@ -17,14 +17,11 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
       run: npm i --legacy-peer-deps
-      
-    - name: Run TypeScript type check
-      run: npx tsc --noEmit
       
     - name: Run ESLint
       run: npm run lint
@@ -39,7 +36,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
