@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { Modal as RNModal } from 'react-native';
+import { NativeSyntheticEvent, Modal as RNModal } from 'react-native';
 import { useModalStore } from './modalStore';
 import { AppModalProps } from './types';
 
 function AppModalComponent({
   visible,
   priority = 0,
-  name: modalId = `modal-${Date.now().toString(36)}`,
+  name: modalId = `modal-${Math.random().toString(36).slice(7, 19)}`,
   stackable = false,
   unmountOnHide = true,
   children,
@@ -34,7 +34,7 @@ function AppModalComponent({
   }, [visible, modalId, priority, stackable, show, hide]);
 
   const onRequestClose = React.useCallback(
-    (e: any) => {
+    (e: NativeSyntheticEvent<never>) => {
       if (onRequestCloseProp) {
         onRequestCloseProp(e);
       }
