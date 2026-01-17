@@ -189,7 +189,10 @@ describe('modalStore', () => {
       // Non-stackable modal doesn't block the chain - only stackable modals are visible
       const visible = getVisibleModals();
       expect(visible).toHaveLength(2);
-      expect(visible.map(m => m.id)).toEqual(['stackable-first', 'stackable-after']);
+      expect(visible.map(m => m.id)).toEqual([
+        'stackable-first',
+        'stackable-after',
+      ]);
     });
 
     test('handles mixed stackable sequence correctly', () => {
