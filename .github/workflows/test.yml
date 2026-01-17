@@ -1,0 +1,102 @@
+name: Tests and Coverage
+
+on:
+  push:
+  pull_request:
+    branches: [ master, develop ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run TypeScript type check
+      run: npx tsc --noEmit
+      
+    - name: Run ESLint
+      run: npm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run TypeScript type check
+      run: npx tsc --noEmit
+      
+    - name: Run ESLint
+      run: npm run lint
+      
+    - name: Run tests with coverage
+      run: npm run test:coverage
+      
+    - name: Upload coverage to Codecov
+      if: github.event_name == 'pull_request'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/lcov.info
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        
+    - name: Comment coverage on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = './coverage/coverage-summary.json';
+          
+          if (fs.existsSync(path)) {
+            const coverage = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const { total } = coverage;
+            
+            const comment = `
+            ## 📊 Test Coverage Report
+            
+            | Metric | Coverage |
+            |--------|----------|
+            | **Lines** | ${total.lines.pct}% (${total.lines.covered}/${total.lines.total}) |
+            | **Functions** | ${total.functions.pct}% (${total.functions.covered}/${total.functions.total}) |
+            | **Branches** | ${total.branches.pct}% (${total.branches.covered}/${total.branches.total}) |
+            | **Statements** | ${total.statements.pct}% (${total.statements.covered}/${total.statements.total}) |
+            
+            ${total.lines.pct >= 50 ? '✅' : '❌'} Lines coverage threshold: 50%
+            ${total.functions.pct >= 70 ? '✅' : '❌'} Functions coverage threshold: 70%
+            ${total.branches.pct >= 50 ? '✅' : '❌'} Branches coverage threshold: 50%
+            ${total.statements.pct >= 50 ? '✅' : '❌'} Statements coverage threshold: 50%
+            
+            [📄 View detailed coverage report](https://codecov.io/gh/${{ github.repository }}/pull/${{ github.event.number }})
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          }
