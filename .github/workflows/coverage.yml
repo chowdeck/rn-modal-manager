@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [ master, develop ]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   pr-test-coverage:
     runs-on: ubuntu-latest
@@ -23,47 +27,7 @@ jobs:
     - name: Run tests with coverage
       run: npm run test:coverage
       
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+    - name: Jest Coverage Comment
+      uses: MishaKav/jest-coverage-comment@main
       with:
-        file: ./coverage/lcov.info
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
-        
-    - name: Comment coverage on PR
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const fs = require('fs');
-          const path = './coverage/coverage-summary.json';
-          
-          if (fs.existsSync(path)) {
-            const coverage = JSON.parse(fs.readFileSync(path, 'utf8'));
-            const { total } = coverage;
-            
-            const comment = `
-            ## 📊 Test Coverage Report
-            
-            | Metric | Coverage |
-            |--------|----------|
-            | **Lines** | ${total.lines.pct}% (${total.lines.covered}/${total.lines.total}) |
-            | **Functions** | ${total.functions.pct}% (${total.functions.covered}/${total.functions.total}) |
-            | **Branches** | ${total.branches.pct}% (${total.branches.covered}/${total.branches.total}) |
-            | **Statements** | ${total.statements.pct}% (${total.statements.covered}/${total.statements.total}) |
-            
-            ${total.lines.pct >= 50 ? '✅' : '❌'} Lines coverage threshold: 50%
-            ${total.functions.pct >= 70 ? '✅' : '❌'} Functions coverage threshold: 70%
-            ${total.branches.pct >= 50 ? '✅' : '❌'} Branches coverage threshold: 50%
-            ${total.statements.pct >= 50 ? '✅' : '❌'} Statements coverage threshold: 50%
-            
-            [📄 View detailed coverage report](https://codecov.io/gh/${{ github.repository }}/pull/${{ github.event.number }})
-            `;
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
-          }
+        coverage-summary-path: ./coverage/coverage-summary.json
