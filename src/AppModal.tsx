@@ -3,16 +3,19 @@ import { NativeSyntheticEvent, Modal as RNModal } from 'react-native';
 import { useModalStore } from './modalStore';
 import { AppModalProps } from './types';
 
+const defaultModalName = `modal-${Math.random().toString(36).slice(7, 19)}`;
+
 function AppModalComponent({
   visible,
   priority = 0,
-  name: modalId = `modal-${Math.random().toString(36).slice(7, 19)}`,
+  name = '',
   stackable = false,
   unmountOnHide = true,
   children,
   onRequestClose: onRequestCloseProp,
   ...props
 }: AppModalProps) {
+  const modalId = name.length ? name : defaultModalName;
   const show = useModalStore(s => s.show);
   const hide = useModalStore(s => s.hide);
 
