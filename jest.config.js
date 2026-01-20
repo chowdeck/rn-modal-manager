@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 module.exports = {
   testEnvironment: 'node',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
@@ -19,7 +20,7 @@ module.exports = {
     '!src/types.ts',
   ],
   coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'text-summary', 'lcov', 'html'],
+  coverageReporters: ['json-summary', 'text', 'lcov', 'html'],
   coverageThreshold: {
     global: {
       branches: 50,
