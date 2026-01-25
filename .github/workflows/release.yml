@@ -3,6 +3,9 @@ name: Build and Attach Tarball Release
 on:
   release:
     types: [created]
+  push:
+    branches:
+      - chore/eslint-with-ci-setup
   # Alternatively, use tags
   # push:
   #   tags:
