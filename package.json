@@ -19,10 +19,6 @@
     "react": ">=17",
     "react-native": ">=0.68"
   },
-  "peerDependenciesMeta": {
-    "react": { "optional": false },
-    "react-native": { "optional": false }
-  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
@@ -52,6 +48,9 @@
     "@babel/preset-env": "^7.28.6",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
+    "@semantic-release/changelog": "^6.0.0",
+    "@semantic-release/git": "^10.0.0",
+    "@semantic-release/github": "^9.0.0",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",
@@ -72,6 +71,7 @@
     "react": "18.2.0",
     "react-native": "0.75.3",
     "react-test-renderer": "18.2.0",
+    "semantic-release": "^22.0.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5.9.3"
   }

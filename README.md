@@ -29,19 +29,8 @@ npm install https://github.com/chowdeck/rn-modal-manager/releases/download/vX.Y.
 ```
 
 ### Compatibility
-- Peer ranges: `react >=17 <19`, `react-native >=0.68`.
-- React Native 0.68–0.70 typically uses React 17.x → ensure your app pins React 17.
-- React Native 0.74 requires React 18.2.0 → pin `react@18.2.0` in your app.
+- Peer ranges: `react >=17`, `react-native >=0.68`.
 - Newer RN versions should work within the open lower bound. If a breaking peer appears upstream, we’ll adjust ranges in a future release.
-
-Note on git-based installs: If you must install directly from the repository source (not the Release tarball), consider omitting dev dependencies during install to avoid peer resolution issues:
-
-```sh
-# One-off
-NPM_CONFIG_OMIT=dev npm install
-
-# Or set in .npmrc of the consuming app
-omit=dev
 ```
 
 ## Quick start

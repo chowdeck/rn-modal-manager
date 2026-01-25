@@ -1,22 +1,26 @@
-name: Build and Attach Tarball Release
+name: Release
 
 on:
-  release:
-    types: [created]
-  # Alternatively, use tags
-  # push:
-  #   tags:
-  #     - "v*"
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: read
 
 jobs:
-  build-pack-release:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -27,24 +31,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run lint and tests
-        run: |
-            npm run lint
-            npm test
+      - name: Run linting
+        run: npm run lint
 
-      - name: Pack tarball
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Create tarball for release
+        if: ${{ github.event_name != 'pull_request' }}
         run: npm pack
 
-      - name: Upload package artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rn-modal-manager-tarball
-          path: rn-modal-manager-*.tgz
-
-      - name: Attach tarball to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            rn-modal-manager-*.tgz
+      - name: Release
+        if: ${{ github.event_name != 'pull_request' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
