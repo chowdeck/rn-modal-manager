@@ -2,14 +2,30 @@
   "name": "rn-modal-manager",
   "version": "0.2.0",
   "description": "A modal manager for React Native applications",
-  "main": "index.ts",
-  "types": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "sideEffects": false,
   "peerDependencies": {
     "react": ">=17",
     "react-native": ">=0.68"
   },
+  "peerDependenciesMeta": {
+    "react": { "optional": false },
+    "react-native": { "optional": false }
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
