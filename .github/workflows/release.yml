@@ -40,10 +40,6 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Create tarball for release
-        if: ${{ github.event_name != 'pull_request' }}
-        run: npm pack
-
       - name: Release
         if: ${{ github.event_name != 'pull_request' }}
         env:
