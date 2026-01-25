@@ -36,6 +36,8 @@ jobs:
 
       - name: Build package
         run: npm run build
+      
+      - run: npm pack
 
       - name: Release
         if: ${{ github.event_name != 'pull_request' }}
