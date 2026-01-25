@@ -2,14 +2,26 @@
   "name": "rn-modal-manager",
   "version": "0.2.0",
   "description": "A modal manager for React Native applications",
-  "main": "index.ts",
-  "types": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "sideEffects": false,
   "peerDependencies": {
     "react": ">=17",
     "react-native": ">=0.68"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -36,6 +48,10 @@
     "@babel/preset-env": "^7.28.6",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
+    "@semantic-release/changelog": "^6.0.0",
+    "@semantic-release/git": "^10.0.0",
+    "@semantic-release/github": "^9.0.0",
+    "@semantic-release/npm": "^13.1.3",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",
@@ -56,6 +72,7 @@
     "react": "18.2.0",
     "react-native": "0.75.3",
     "react-test-renderer": "18.2.0",
+    "semantic-release": "^22.0.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5.9.3"
   }

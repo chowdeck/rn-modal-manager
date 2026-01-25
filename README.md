@@ -20,6 +20,19 @@ yarn add rn-modal-manager
 
 This package lists `react` and `react-native` as peer dependencies, so make sure they are already installed in your project.
 
+### Installing from GitHub Release tarball (recommended for git installs)
+If you prefer to consume the built tarball (avoids bootstrapping devDependencies), install directly from a GitHub Release:
+
+```sh
+# Replace vX.Y.Z with the release tag you want
+npm install https://github.com/chowdeck/rn-modal-manager/releases/download/vX.Y.Z/rn-modal-manager-X.Y.Z.tgz
+```
+
+### Compatibility
+- Peer ranges: `react >=17`, `react-native >=0.68`.
+- Newer RN versions should work within the open lower bound. If a breaking peer appears upstream, we’ll adjust ranges in a future release.
+```
+
 ## Quick start
 ```tsx
 import React from 'react'
