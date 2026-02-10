@@ -1,6 +1,6 @@
 {
   "name": "rn-modal-manager",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "A modal manager for React Native applications",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
