@@ -34,7 +34,8 @@ function AppModalComponent({
     return () => {
       hide(modalId);
     };
-  }, [visible, modalId, priority, stackable, show, hide]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, modalId]);
 
   const onRequestClose = React.useCallback(
     (e: NativeSyntheticEvent<never>) => {
