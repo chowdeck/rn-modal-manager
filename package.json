@@ -1,7 +1,7 @@
 {
   "name": "rn-modal-manager",
-  "version": "1.0.3",
-  "description": "A modal manager for React Native applications",
+  "version": "2.0.0",
+  "description": "Serialised native modal presentation for React Native: one controller owns every modal, so iOS never drops a presentation.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -16,8 +16,8 @@
   ],
   "sideEffects": false,
   "peerDependencies": {
-    "react": ">=17",
-    "react-native": ">=0.68"
+    "react": ">=18",
+    "react-native": ">=0.69"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -25,14 +25,22 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "eslint src --ext .ts,.tsx",
-    "lint:fix": "eslint src --ext .ts,.tsx --fix",
-    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
+    "lint": "eslint src index.ts",
+    "lint:fix": "eslint src index.ts --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" index.ts",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" index.ts",
     "lint-staged": "lint-staged",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "typecheck": "tsc -p tsconfig.json"
   },
-  "keywords": [],
+  "keywords": [
+    "react-native",
+    "modal",
+    "bottom-sheet",
+    "ios",
+    "modal-manager",
+    "useSyncExternalStore"
+  ],
   "author": "Sauban Lawal",
   "lint-staged": {
     "src/**/*.{ts,tsx}": [
@@ -40,14 +48,12 @@
       "prettier --write"
     ]
   },
-  "dependencies": {
-    "zustand": "^5.0.9"
-  },
   "devDependencies": {
     "@babel/core": "^7.28.6",
     "@babel/preset-env": "^7.28.6",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
+    "@react-navigation/core": "^7.24.0",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",

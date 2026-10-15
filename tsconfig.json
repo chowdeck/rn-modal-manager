@@ -1,9 +1,14 @@
 {
   "compilerOptions": {
-    "jsx": "react-native",
-    "strict": false,
+    "jsx": "react-jsx",
+    "strict": true,
     "target": "es2019",
+    "module": "commonjs",
     "moduleResolution": "node",
-    "skipLibCheck": false
-  }
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["jest", "react-native"]
+  },
+  "include": ["src/**/*", "index.ts"]
 }

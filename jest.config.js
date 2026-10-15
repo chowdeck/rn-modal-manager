@@ -8,7 +8,7 @@ module.exports = {
     '^.+\\.(ts|tsx|js|jsx)$': 'babel-jest',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|@react-native-community)/)',
+    'node_modules/(?!(react-native|@react-native|@react-native-community|@react-navigation|nanoid|query-string|decode-uri-component|split-on-first|filter-obj|use-latest-callback)/)',
   ],
   testMatch: ['<rootDir>/src/__tests__/**/*.test.ts', '<rootDir>/src/__tests__/**/*.test.tsx'],
   
