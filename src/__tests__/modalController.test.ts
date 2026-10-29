@@ -339,6 +339,72 @@ describe('modalController', () => {
     expect(visibility).toEqual({ select_address: true });
   });
 
+  it('presents a modal the user opened before any waiting prompt, whatever its priority', () => {
+    const { visibility, bind } = setup();
+    const seen: Array<Record<string, unknown>> = [];
+    modalController.subscribeEvents(event => {
+      if (event.type === 'contention') seen.push(event);
+    });
+    // Both wait out a navigation settle, so they contend for the screen together.
+    modalController.markNavigationChange({
+      routeName: 'Home',
+      routeKey: 'home-2',
+    });
+    const update = bind('force_update');
+    const sheet = bind('Sheet');
+    update.open();
+    tick(100);
+    sheet.open();
+    tick(TIMINGS.navigationSettleMs);
+    expect(visibility).toEqual({ Sheet: true });
+    expect(seen[0]).toMatchObject({
+      id: 'Sheet',
+      winner_priority: 'user',
+      waiting: ['force_update@100'],
+    });
+
+    sheet.shown();
+    sheet.close();
+    tick();
+    sheet.dismissed();
+    expect(visibility.force_update).toBe(true);
+  });
+
+  it('never interrupts a modal the user has on screen for a prompt', () => {
+    const { visibility, bind } = setup();
+    const sheet = bind('Sheet');
+    const update = bind('force_update');
+    sheet.open();
+    tick();
+    sheet.shown();
+    update.open();
+    tick(TIMINGS.promptStallMs);
+    expect(visibility.force_update).toBeUndefined();
+    expect(visibility.Sheet).toBe(true);
+    sheet.close();
+    tick();
+    sheet.dismissed();
+    expect(visibility.force_update).toBe(true);
+  });
+
+  it('presents modals the user opened in the order they were opened', () => {
+    const { visibility, bind } = setup();
+    modalController.markNavigationChange({
+      routeName: 'Home',
+      routeKey: 'home-2',
+    });
+    const first = bind('First');
+    const second = bind('Second');
+    second.open();
+    tick(10);
+    first.open();
+    tick(TIMINGS.navigationSettleMs);
+    expect(visibility).toEqual({ Second: true });
+    expect(
+      modalController.inspect().entries.map(entry => entry.priority)
+    ).toEqual([null, null]);
+  });
+
   it('treats an instance of a prompt id as a user modal', () => {
     const { visibility, bind } = setup();
     modalController.setSignals({

@@ -6,15 +6,14 @@ import type {
 } from './types';
 
 /**
- * A suggested priority scale. User-opened modals rank at `user` (60): prompts above
- * it go ahead of modals the user opened, prompts below wait for them.
+ * A suggested priority scale for automatic prompts. It only orders prompts among
+ * themselves: a modal the user opened always presents before any prompt.
  */
 export const MODAL_PRIORITY = Object.freeze({
   blocking: 100,
   onboarding: 90,
   required: 80,
   orderCritical: 70,
-  user: 60,
   default: 50,
   feedback: 35,
   marketing: 20,

@@ -229,7 +229,8 @@ export interface InspectEntry {
   bound: boolean;
   parent: string | null;
   auto: boolean;
-  priority: number;
+  /** The prompt's policy priority; null for a modal the user opened. */
+  priority: number | null;
   focused: boolean;
 }
 

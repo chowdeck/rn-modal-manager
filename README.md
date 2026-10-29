@@ -41,7 +41,8 @@ v2 makes those overlaps impossible. It schedules **native transitions**, not
    Android (which has no `onDismiss`).
 2. One root-level modal on screen at a time. A modal rendered *inside* another one
    presents from that modal's controller, which UIKit supports, so it may show
-   once its parent is shown. Root-level siblings queue.
+   once its parent is shown. Root-level siblings queue, and a modal on screen is
+   never interrupted for another one.
 3. Root-level presents wait for navigation transitions (until the native-stack
    screen reports `transitionEnd`) and for native modal routes.
 4. Automatic prompts also wait for the app to be ready, an active app, route rules, a delay
@@ -233,7 +234,7 @@ Policy fields (all optional except `priority`):
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `priority` | — | Higher presents first. User-opened modals rank at `MODAL_PRIORITY.user` (60). Give each prompt a distinct priority: a tie presents in arrival order and is reported as `priority_tie`. |
+| `priority` | — | Orders prompts among themselves: higher presents first. It never puts a prompt ahead of a modal the user opened (see below). Give each prompt a distinct priority: a tie presents in arrival order and is reported as `priority_tie`. |
 | `delayMs` | `0` | Hold the prompt this long after it is opened. |
 | `waitForAppReady` | `true` | Hold while the `appReady` signal is `false` (see [App readiness](#app-readiness)). |
 | `allowedRoutes` | none | Only present on these routes. |
@@ -241,6 +242,15 @@ Policy fields (all optional except `priority`):
 
 Route patterns are exact route names, `RegExp`s, or regex source wrapped in
 slashes (`"/Checkout/"`, as a server would send it).
+
+**The user goes first.** Prompts always wait for modals the user opened:
+
+- A prompt opened while the user has a modal on screen waits until that modal is
+  fully dismissed. This holds even for `force_update`.
+- When the screen frees up and a modal the user opened is waiting alongside
+  prompts, it presents first, whatever the prompts' priorities.
+- Modals the user opened go in the order they were opened. Prompts go by
+  priority.
 
 The code that decides "should this show now" only calls `open` / `close`. It does
 **not** check whether other modals are visible: the controller gates on app readiness,

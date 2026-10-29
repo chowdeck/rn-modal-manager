@@ -12,7 +12,7 @@ export const TEST_POLICIES: ModalPolicies = {
   delayed_order: { priority: MODAL_PRIORITY.orderCritical - 2 },
   order_extra_pack: { priority: MODAL_PRIORITY.orderCritical - 5 },
   order_pin_info: {
-    priority: MODAL_PRIORITY.user - 1,
+    priority: MODAL_PRIORITY.orderCritical - 11,
     allowedRoutes: ['TrackOrder'],
   },
   survey_acquisition: { priority: MODAL_PRIORITY.feedback + 5 },

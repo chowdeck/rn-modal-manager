@@ -88,7 +88,6 @@ export const PHASES: readonly ModalPhase[] = [
   'exiting',
   'dismissing',
 ];
-const USER_PRIORITY = 60;
 const EVENT_BUFFER = 100;
 
 const isDev = (): boolean => typeof __DEV__ !== 'undefined' && !!__DEV__;
@@ -339,8 +338,23 @@ const policyFor = (entry: Entry): ResolvedModalPolicy =>
   resolveModalPolicy(entry.baseId, serverPolicy, policies);
 const isAuto = (entry: Entry): boolean =>
   !entry.instance && policyFor(entry).known;
-const priorityOf = (entry: Entry): number =>
-  isAuto(entry) ? policyFor(entry).priority : USER_PRIORITY;
+// A prompt's policy priority; null for a modal the user opened, which has none.
+const priorityOf = (entry: Entry): number | null =>
+  isAuto(entry) ? policyFor(entry).priority : null;
+const priorityLabel = (entry: Entry): number | 'user' =>
+  priorityOf(entry) ?? 'user';
+
+// Which waiting root modal presents first. A modal the user opened always goes
+// before an automatic prompt: they tapped for it, and a prompt can show once it is
+// closed. Prompts go by priority; equals go in the order they were opened.
+function outranks(entry: Entry, other: Entry): boolean {
+  const auto = isAuto(entry);
+  if (auto !== isAuto(other)) return !auto;
+  const priority = priorityOf(entry) ?? 0;
+  const otherPriority = priorityOf(other) ?? 0;
+  if (priority !== otherPriority) return priority > otherPriority;
+  return entry.waitingSince < other.waitingSince;
+}
 
 const parentKeyOf = (entry: Entry): string | null =>
   entry.binding?.parentKey || null;
@@ -739,21 +753,14 @@ function selectRoot(): { entry: Entry | null; wakeInMs: number | null } {
       }
     }
     contenders.push(entry);
-    if (
-      !best ||
-      priorityOf(entry) > priorityOf(best) ||
-      (priorityOf(entry) === priorityOf(best) &&
-        entry.waitingSince < best.waitingSince)
-    ) {
-      best = entry;
-    }
+    if (!best || outranks(entry, best)) best = entry;
   });
   const winner = best as Entry | null;
   if (winner && contenders.length > 1) {
     const others = contenders.filter(entry => entry !== winner);
     breadcrumb('contention', winner, {
-      winner_priority: priorityOf(winner),
-      waiting: others.map(entry => `${entry.id}@${priorityOf(entry)}`),
+      winner_priority: priorityLabel(winner),
+      waiting: others.map(entry => `${entry.id}@${priorityLabel(entry)}`),
     });
     if (
       others.some(

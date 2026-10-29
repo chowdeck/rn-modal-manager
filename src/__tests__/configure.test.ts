@@ -33,7 +33,7 @@ describe('modalController.configure', () => {
     expect(modalController.inspect().entries[0]).toMatchObject({
       id: 'promo',
       auto: false,
-      priority: MODAL_PRIORITY.user,
+      priority: null,
     });
   });
 
