@@ -184,4 +184,32 @@ export function NativeModalScreenLayout({
   );
 }
 
+/** What `modalScreenListeners` returns: native-stack transition listeners. */
+export interface ModalScreenListeners {
+  transitionStart: (event?: { data?: { closing?: boolean } }) => void;
+  transitionEnd: (event?: { data?: { closing?: boolean } }) => void;
+}
+
+/**
+ * `screenListeners` for every native-stack navigator: root-level presents wait for a
+ * screen's native push or pop to finish, not just for a fixed settle window.
+ *
+ * ```tsx
+ * <Stack.Navigator screenListeners={modalScreenListeners}>
+ * ```
+ */
+export const modalScreenListeners = ({
+  route,
+}: {
+  route?: { key?: string } | null;
+}): ModalScreenListeners => ({
+  transitionStart: event => {
+    // The screen going away may never report its end (it unmounts); the one
+    // appearing is what a modal would present over.
+    if (!event?.data?.closing)
+      modalController.markScreenTransition(route?.key, true);
+  },
+  transitionEnd: () => modalController.markScreenTransition(route?.key, false),
+});
+
 export default Modal;

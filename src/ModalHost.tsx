@@ -309,15 +309,16 @@ export function ModalHost({
     renderedRef.current = [...own, ...chain];
   });
 
-  useEffect(function closeHostedModalsOnUnmount() {
-    // Stack modals keep their intent when they unmount (see PresetShell), so the
-    // modals of a host that goes away (its screen closed) are closed here.
-    return () => {
-      renderedRef.current.forEach(id =>
-        modalController.close(id, { reason: 'host_unmounted' })
-      );
-    };
-  }, []);
+  useEffect(
+    function releaseScopeOnUnmount() {
+      // A screen's host going away closes the modals it rendered (stack modals keep
+      // their intent when they unmount, see PresetShell) and hands the ones it never
+      // rendered back to the app's host.
+      return () =>
+        modalController.releaseScope(scope, { rendered: renderedRef.current });
+    },
+    [scope]
+  );
 
   return (
     <>

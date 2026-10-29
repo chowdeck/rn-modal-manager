@@ -7,7 +7,12 @@ import {
   type NavigationProp,
   type ParamListBase,
 } from '@react-navigation/core';
-import { Modal } from '../Modal';
+import type {
+  NavigationState,
+  RouteProp,
+  ScreenListeners,
+} from '@react-navigation/core';
+import { Modal, modalScreenListeners } from '../Modal';
 import modalController, { TIMINGS } from '../modalController';
 import {
   NativeModalScreenWithHost,
@@ -255,5 +260,85 @@ describe('navigation helpers', () => {
 
     act(() => tree.unmount());
     expect(modalController.isOpen('picker')).toBe(false);
+  });
+});
+
+describe('modalScreenListeners with React Navigation', () => {
+  // The native-stack events it listens to, as @react-navigation/native-stack types them.
+  type NativeStackEvents = {
+    transitionStart: { data: { closing: boolean } };
+    transitionEnd: { data: { closing: boolean } };
+  };
+  // Type-level: it is accepted as a navigator's `screenListeners`.
+  const asScreenListeners: (props: {
+    route: RouteProp<ParamListBase>;
+  }) => ScreenListeners<NavigationState, NativeStackEvents> =
+    modalScreenListeners;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    modalController.__reset();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('holds root presents until the appearing screen reports its end', () => {
+    const visibility: Record<string, boolean> = {};
+    modalController.bind('Root', {
+      setNativeVisible: value => {
+        visibility.Root = value;
+      },
+    });
+    const listeners = asScreenListeners({
+      route: { key: 'track-1', name: 'Track', params: undefined },
+    });
+    listeners.transitionStart?.({
+      type: 'transitionStart',
+      data: { closing: false },
+      target: 'track-1',
+    });
+    modalController.open('Root');
+    jest.advanceTimersByTime(TIMINGS.screenTransitionMaxMs - 100);
+    expect(visibility.Root).toBeUndefined();
+    listeners.transitionEnd?.({
+      type: 'transitionEnd',
+      data: { closing: false },
+      target: 'track-1',
+    });
+    jest.advanceTimersByTime(0);
+    expect(visibility.Root).toBe(true);
+  });
+});
+
+describe('scoped modals when a native modal route leaves', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    modalController.__reset();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('hands a scoped modal no host rendered back to the app host', () => {
+    const nativeModalRoutes = ['Upgrade'];
+    const at = (routes: string[]) => ({
+      getRootState: () => ({
+        index: routes.length - 1,
+        routes: routes.map(name => ({ name, key: name })),
+      }),
+      getCurrentRoute: () => ({
+        name: routes[routes.length - 1],
+        key: routes[routes.length - 1],
+      }),
+    });
+    syncModalNavigation(at(['Main', 'Upgrade']), { nativeModalRoutes });
+    modalController.open('picker');
+    expect(modalController.getView('picker').hostScope).toBe('screen:Upgrade');
+    syncModalNavigation(at(['Main']), { nativeModalRoutes });
+    expect(modalController.getView('picker').hostScope).toBeNull();
+    expect(modalController.isOpen('picker')).toBe(true);
   });
 });

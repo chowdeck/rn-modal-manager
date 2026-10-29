@@ -297,6 +297,33 @@ describe('modalController', () => {
     expect(visibility.PinInfo).toBe(true);
   });
 
+  it('holds root presents until a native-stack screen transition ends', () => {
+    const { visibility, bind } = setup();
+    modalController.markNavigationChange({
+      routeName: 'TrackOrder',
+      routeKey: 'track-1',
+    });
+    modalController.markScreenTransition('track-1', true);
+    const modal = bind('PinInfo');
+    modal.open();
+    tick(TIMINGS.navigationSettleMs + 300);
+    expect(visibility.PinInfo).toBeUndefined();
+    modalController.markScreenTransition('track-1', false);
+    tick();
+    expect(visibility.PinInfo).toBe(true);
+  });
+
+  it('stops waiting for a screen transition that never reports its end', () => {
+    const { visibility, bind } = setup();
+    modalController.markScreenTransition('lost', true);
+    const modal = bind('PinInfo');
+    modal.open();
+    tick(TIMINGS.screenTransitionMaxMs - 10);
+    expect(visibility.PinInfo).toBeUndefined();
+    tick(20);
+    expect(visibility.PinInfo).toBe(true);
+  });
+
   it('holds auto prompts until the splash is done and orders them by priority', () => {
     const { visibility, bind } = setup();
     modalController.setSignals({ splashComplete: false });
@@ -449,7 +476,7 @@ describe('modalController', () => {
     expect(visibility.Second).toBe(true);
   });
 
-  it('reports a user-opened modal stuck behind another one, and a starved prompt', () => {
+  it('reports a user-opened modal stuck behind another one, but not a prompt queued behind it', () => {
     const { issues, bind } = setup();
     const sheet = bind('Sheet');
     const loader = bind('Loader');
@@ -467,8 +494,103 @@ describe('modalController', () => {
         blocked_by: 'Sheet',
       }),
     ]);
-    tick(TIMINGS.promptStallMs);
-    expect(issues.map(item => item.type)).toContain('prompt_starved');
+    // The user is reading the sheet: the prompt waits its turn, which is not starvation.
+    tick(TIMINGS.promptStallMs * 2);
+    expect(issues.map(item => item.type)).not.toContain('prompt_starved');
+  });
+
+  it('reports a prompt starved with nothing on screen in its way', () => {
+    const { issues } = setup();
+    // Opened, but no host ever renders it.
+    modalController.open('in_app_message');
+    tick(TIMINGS.promptStallMs + 10);
+    expect(issues).toEqual([
+      expect.objectContaining({
+        type: 'prompt_starved',
+        modal_id: 'in_app_message',
+        blocked_by: 'unbound',
+      }),
+    ]);
+  });
+
+  it('does not report a prompt held by its own route policy', () => {
+    const { visibility, issues, bind } = setup();
+    modalController.setSignals({ routeName: 'Checkout' });
+    const prompt = bind('in_app_message');
+    prompt.open();
+    tick(TIMINGS.promptStallMs * 2);
+    expect(visibility.in_app_message).toBeUndefined();
+    expect(issues).toEqual([]);
+  });
+
+  it('starts the stall clock of a held prompt when the hold is over', () => {
+    const { issues, bind } = setup();
+    const sheet = bind('Sheet');
+    sheet.open();
+    tick();
+    sheet.shown();
+    // No host renders the prompt, but while the sheet is up it only waits its turn.
+    modalController.open('in_app_message');
+    tick(TIMINGS.promptStallMs * 2);
+    sheet.close();
+    tick();
+    sheet.dismissed();
+    tick(TIMINGS.promptStallMs - 100);
+    expect(issues).toEqual([]);
+    tick(200);
+    expect(issues).toEqual([
+      expect.objectContaining({
+        type: 'prompt_starved',
+        blocked_by: 'unbound',
+      }),
+    ]);
+  });
+
+  it('reports the queue as flat strings Sentry can show', () => {
+    const { issues, bind } = setup();
+    const sheet = bind('Sheet');
+    const loader = bind('Loader');
+    bind('Idle');
+    sheet.open();
+    tick();
+    sheet.shown();
+    loader.open();
+    tick(TIMINGS.userStallMs + 10);
+    expect(issues[0].queue).toEqual(
+      expect.objectContaining({
+        entries: ['Sheet:shown:wanted', 'Loader:waiting:wanted'],
+        idle: 1,
+      })
+    );
+  });
+
+  it('does not time out a transition while the app is inactive, and re-arms on return', () => {
+    const { visibility, issues, bind } = setup();
+    const modal = bind('PinInfo');
+    modal.open();
+    tick();
+    expect(visibility.PinInfo).toBe(true);
+    modalController.setSignals({ appActive: false });
+    tick(TIMINGS.presentTimeoutMs * 4);
+    expect(issues).toEqual([]);
+    expect(phase('PinInfo')).toBe('presenting');
+
+    modalController.setSignals({ appActive: true });
+    tick(TIMINGS.presentTimeoutMs - 10);
+    modal.shown();
+    expect(phase('PinInfo')).toBe('shown');
+
+    modal.close();
+    tick();
+    modalController.setSignals({ appActive: false });
+    tick(TIMINGS.dismissTimeoutMs * 4);
+    expect(issues).toEqual([]);
+    modalController.setSignals({ appActive: true });
+    tick(TIMINGS.dismissTimeoutMs - 10);
+    expect(issues).toEqual([]);
+    tick(20);
+    expect(issues.map(item => item.type)).toEqual(['dismiss_timeout']);
+    expect(phase('PinInfo')).toBe('idle');
   });
 
   it('holds a modal whose screen is not focused and presents it on focus', () => {
@@ -616,6 +738,19 @@ describe('modalController', () => {
     });
     modalController.open('pay_online');
     expect(modalController.getView('pay_online').hostScope).toBeNull();
+  });
+
+  it('never scopes a screen-local instance to a native modal route', () => {
+    modalController.markNavigationChange({
+      routeName: 'Plan',
+      routeKey: 'p',
+      nativeModalRoute: 'Plan',
+    });
+    const id = modalController.createInstance('picker');
+    modalController.open(id);
+    expect(modalController.getView(id).hostScope).toBeNull();
+    modalController.releaseScope('screen:Plan');
+    expect(modalController.isOpen(id)).toBe(true);
   });
 
   it('publishes an event stream and stable per-id views', () => {

@@ -16,8 +16,9 @@ export {
   Modal,
   ModalParentContext,
   NativeModalScreenLayout,
+  modalScreenListeners,
 } from './src/Modal';
-export type { ModalProps } from './src/Modal';
+export type { ModalProps, ModalScreenListeners } from './src/Modal';
 export { ModalHost, DEFAULT_MODAL_MOTION } from './src/ModalHost';
 export type { ModalHostProps, ModalMotion } from './src/ModalHost';
 export {
@@ -54,6 +55,7 @@ export type {
   ModalSignals,
   NavigationChange,
   ModalReporterData,
+  ModalQueueSummary,
   ModalReporter,
   ModalEvent,
   ModalTimings,

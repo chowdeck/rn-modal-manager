@@ -42,12 +42,15 @@ v2 makes those overlaps impossible. It schedules **native transitions**, not
 2. One root-level modal on screen at a time. A modal rendered *inside* another one
    presents from that modal's controller, which UIKit supports, so it may show
    once its parent is shown. Root-level siblings queue.
-3. Root-level presents wait for navigation transitions and native modal routes.
+3. Root-level presents wait for navigation transitions (until the native-stack
+   screen reports `transitionEnd`) and for native modal routes.
 4. Automatic prompts also wait for the splash, an active app, route rules, a delay
    and their priority turn. The server can change all of this.
 5. Watchdogs report (and recover from) presents that never complete, dismissals
    that never report back, and modals stuck behind another one. A regression then
-   shows up in your error reporter instead of as a frozen screen.
+   shows up in your error reporter instead of as a frozen screen. They stand down
+   while the app is inactive, because iOS holds modal transitions until it is
+   active again.
 
 ## Vocabulary
 
@@ -97,7 +100,12 @@ modalController.configure({
 ```tsx
 // App.tsx
 import { AppState } from 'react-native';
-import { ModalHost, modalController, syncModalNavigation } from 'rn-modal-manager';
+import {
+  ModalHost,
+  modalController,
+  modalScreenListeners,
+  syncModalNavigation,
+} from 'rn-modal-manager';
 import { modalRegistry } from './modalRegistry';
 
 const NATIVE_MODAL_ROUTES = new Set(['UpgradePlan', 'OrderIssue']);
@@ -106,7 +114,8 @@ const syncNavigation = () =>
 
 export function App() {
   useEffect(() => {
-    // Automatic prompts wait for these two signals.
+    // Automatic prompts wait for both signals; the watchdogs pause while the app
+    // is not active ('inactive' too: iOS reports it while a system prompt is up).
     modalController.setSignals({ splashComplete: true }); // when your splash is gone
     const sub = AppState.addEventListener('change', state =>
       modalController.setSignals({ appActive: state === 'active' })
@@ -116,6 +125,7 @@ export function App() {
 
   return (
     <NavigationContainer ref={navigationRef} onReady={syncNavigation} onStateChange={syncNavigation}>
+      {/* And screenListeners={modalScreenListeners} on every native-stack navigator. */}
       <RootStack />
       <ModalHost registry={modalRegistry} />
     </NavigationContainer>
@@ -127,7 +137,8 @@ export function App() {
 > (`waitForSplash` defaults to `true`), and `splashComplete` starts `false`. An app
 > without a splash gate should pass `signals: { splashComplete: true }` to
 > `configure`, or set `waitForSplash: false` on each policy. Otherwise its prompts
-> never show; after 15 s the watchdog reports `prompt_starved`.
+> never show, and nothing reports it: a prompt held by its own policy counts as
+> waiting its turn, not as starved.
 
 ## The three ways to use a modal
 
@@ -308,6 +319,16 @@ navigation container ref.
   the root stack, or null). Root presents wait out each route change, and route
   rules match `routeName`. `nativeModalRoutes` is a `Set`, an array or a
   predicate. `readNavigationState` returns the same data without sending it.
+- **`modalScreenListeners`**: pass it as `screenListeners` on every native-stack
+  navigator. Root presents then wait for a screen's native push or pop to report
+  `transitionEnd` (at most `screenTransitionMaxMs`, 1.5 s), not only for the fixed
+  settle window after a route change. A modal presented while UIKit is still
+  pushing a heavy screen may never report `onShow`. The listeners feed
+  `modalController.markScreenTransition(routeKey, running)`.
+
+  ```tsx
+  <Stack.Navigator screenListeners={modalScreenListeners}>
+  ```
 - **Screen focus**: `configure({ useScreenFocus: () => useContext(NavigationContext) })`.
   A `Modal` on a screen that isn't focused waits until the screen is focused,
   because iOS can't present from a view that isn't in the window. Any hook that
@@ -337,10 +358,15 @@ Then:
 - `Modal`s rendered by those screens nest inside the screen.
 - Registry modals that the **user** opens while one of those routes is on top get a
   `hostScope`. The screen's own host renders them, so they present inside the
-  screen, and they close when it does.
-- **Automatic prompts are never scoped**: they wait until the screen closes.
-- A modal still leaving its old host stays there; scope is only assigned when the
-  entry is idle.
+  screen.
+- When the screen closes, every modal its host rendered closes with it: on screen,
+  still queued, or failed to present.
+- A scoped modal the screen's host never rendered (for example, opened in the same
+  tick as the screen's `goBack()`) moves to the app's host and presents once the
+  route is gone (`modalController.releaseScope`).
+- **Automatic prompts and `useModalInstance` modals are never scoped.** Prompts
+  wait until the screen closes; instances render where their owner lives.
+- A modal still leaving the host that renders it stays with that host.
 
 `NativeModalScreenWithHost` (a component taking `registry` and `route`) and
 `NativeModalScreenLayout` (nesting only, no host) are also exported.
@@ -408,13 +434,26 @@ modalController.getView(id);          // synchronous, frozen view
   these events: `open`, `close`, `present`, `shown`, `exit`, `dismiss`, `closed`,
   `contention`, `thens_dropped`, `bind_unregistered`, and the reported issues.
 - The reporter gets the events as breadcrumbs. It also gets the watchdog issues,
-  each with the full queue attached:
+  each with a flat summary of the queue as `data.queue` (`ModalQueueSummary`): the
+  signals, every entry that isn't idle as `id:phase[:wanted][:unbound][:unfocused][:in:<parent>]`,
+  and a count of idle ones. It is flat so error reporters don't truncate it.
+  `data.queue.signals.appActive` separates a transition iOS held while the app was
+  away from one that really never reported back.
   - `present_timeout` / `present_failed`: iOS dropped a presentation. It is retried
     once, then released, then re-queued on the next navigation or focus change.
   - `dismiss_timeout`: `onDismiss` never came.
+
+  Neither of those fires while the app is inactive. Their timers restart when it
+  is active again.
   - `user_modal_blocked`: a modal the user opened is stuck behind another one.
     Close the first before opening the next, or nest the second inside it.
-  - `prompt_starved`: a prompt is stuck behind one that never closes.
+  - `prompt_starved`: a prompt is stuck with nothing on screen in its way:
+    navigation that never settles, a host that never renders it, or a transition
+    that never ends. A prompt held by its own policy (route, splash, delay,
+    background) or queued behind a modal on screen or a native modal route is
+    waiting its turn, not starved. Its stall clock starts when that hold ends.
+    Issues carry `waited_ms` (since the hold ended) and `queued_ms` (since it was
+    opened).
   - `priority_tie`: two prompts share a priority.
   - `then_error` / `waiter_error`: a callback threw.
 
@@ -477,9 +516,9 @@ Two behaviour changes to expect:
 
 | Export | Kind |
 | --- | --- |
-| `modalController` | The store and scheduler: `configure`, `open`, `close`, `replace`, `closeAll`, `isOpen`, `createInstance`, `remove`, `setSignals`, `markNavigationChange`, `setPolicy`, `isEnabled`, `setReporter`, `whenIdle`, `afterTransitions`, `getView`, `getSnapshot`, `subscribe`, `subscribeEvents`, `getRecentEvents`, `inspect`, `resolvePolicy`, `__reset` |
+| `modalController` | The store and scheduler: `configure`, `open`, `close`, `replace`, `closeAll`, `isOpen`, `createInstance`, `remove`, `setSignals`, `markNavigationChange`, `markScreenTransition`, `releaseScope`, `setPolicy`, `isEnabled`, `setReporter`, `whenIdle`, `afterTransitions`, `getView`, `getSnapshot`, `subscribe`, `subscribeEvents`, `getRecentEvents`, `inspect`, `resolvePolicy`, `__reset` |
 | `useModal`, `useModalInstance`, `useModalView`, `useModalViews`, `modalIdOf` | Hooks and helpers |
-| `Modal`, `ModalParentContext`, `NativeModalScreenLayout` | Native modal binding |
+| `Modal`, `ModalParentContext`, `NativeModalScreenLayout`, `modalScreenListeners` | Native modal binding |
 | `ModalHost`, `DEFAULT_MODAL_MOTION` | Registry renderer |
 | `syncModalNavigation`, `readNavigationState`, `NativeModalScreenWithHost`, `createNativeModalScreenLayout`, `screenParentKey` | Navigation |
 | `resolveModalPolicy`, `matchesRoute`, `MODAL_PRIORITY` | Policies |
@@ -491,7 +530,7 @@ Types: `ModalHandle`, `ModalView`, `ModalPhase`, `ModalPolicy`, `ModalPolicies`,
 `ServerModalPolicy`, `ServerModalPolicyOverride`, `ResolvedModalPolicy`,
 `ModalRegistry`, `ModalRegistryEntry`, `ModalComponentProps`, `ModalPreset`,
 `ModalMotion`, `ModalProps`, `ModalHostProps`, `ModalControllerConfig`,
-`ModalReporter`, `ModalSignals`, `ModalTimings`, `UseScreenFocus` and more.
+`ModalReporter`, `ModalQueueSummary`, `ModalSignals`, `ModalTimings`, `UseScreenFocus` and more.
 
 ## Installing from a GitHub Release tarball
 

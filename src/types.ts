@@ -162,6 +162,8 @@ export interface ModalTimings {
   exitGraceMs: number;
   /** Root presents wait this long after a navigation change. */
   navigationSettleMs: number;
+  /** Fallback for a native-stack screen transition whose `transitionEnd` never arrives. */
+  screenTransitionMaxMs: number;
   /** A user-opened modal stuck this long is reported. */
   userStallMs: number;
   /** An automatic prompt stuck this long is reported. */
@@ -220,6 +222,18 @@ export interface InspectEntry {
   auto: boolean;
   priority: number;
   focused: boolean;
+}
+
+/**
+ * The queue as attached to reporter issues (`data.queue`): flat, so error reporters
+ * don't truncate it. `entries` lists every entry that is not idle as
+ * `id:phase[:wanted][:unbound][:unfocused][:in:<parent>]`.
+ */
+export interface ModalQueueSummary {
+  signals: ModalSignals & { navigationBusy: boolean; enabled: boolean };
+  entries: string[];
+  idle: number;
+  waiters: number;
 }
 
 export interface InspectResult {

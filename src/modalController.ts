@@ -9,6 +9,7 @@ import type {
   ModalEvent,
   ModalPhase,
   ModalPolicies,
+  ModalQueueSummary,
   ModalReporter,
   ModalReporterData,
   ModalSignals,
@@ -38,8 +39,8 @@ import type {
  * 2. One root-level modal on screen at a time. A modal rendered *inside* another
  *    modal (nested) presents from that modal's controller, which UIKit supports, so
  *    nested modals are allowed once their parent is shown. Sibling modals queue.
- * 3. Root-level presents wait for navigation transitions and native-stack modal
- *    routes to settle.
+ * 3. Root-level presents wait for navigation transitions (until the native-stack
+ *    screen reports `transitionEnd`) and native-stack modal routes to settle.
  * 4. Automatic prompts (ids with a policy, see `configure({ policies })`)
  *    additionally wait for the splash, an active app, route rules and their
  *    priority turn, all overridable from the server (`setPolicy`).
@@ -59,7 +60,8 @@ import type {
  *
  * Watchdogs report (and recover from) presents that never complete, dismissals that
  * never report back, and user-opened modals stuck behind another modal, so a
- * regression shows up in the reporter instead of as a frozen screen.
+ * regression shows up in the reporter instead of as a frozen screen. They stand down
+ * while the app is inactive: iOS holds modal transitions until it is active again.
  *
  * Module-level external store: read in React through `useSyncExternalStore` (see
  * hooks.ts), called directly from sagas, push handlers and query callbacks.
@@ -70,6 +72,7 @@ const DEFAULT_TIMINGS: Readonly<ModalTimings> = Object.freeze({
   dismissTimeoutMs: 1500,
   exitGraceMs: 400,
   navigationSettleMs: 450,
+  screenTransitionMaxMs: 1500,
   userStallMs: 4000,
   promptStallMs: 15000,
 });
@@ -149,6 +152,8 @@ interface Entry {
   retried: boolean;
   failed: boolean;
   stallReported: boolean;
+  heldByDesign: boolean;
+  stallSince: number;
   waitingSince: number;
   presentStartedAt: number;
   openedAt: number;
@@ -172,6 +177,8 @@ let views = new Map<string, ModalView>();
 let signals: ModalSignals = initialSignals();
 let configuredSignals: Partial<ModalSignals> = {};
 let navBusyUntil = 0;
+// Route key → start time of a native-stack screen transition still running.
+let screenTransitions = new Map<string, number>();
 let lastRouteKey: string | undefined;
 let serverPolicy: ServerModalPolicy | null = null;
 let policies: ModalPolicies = {};
@@ -279,6 +286,36 @@ function breadcrumb(
   }
 }
 
+// Queue state for an issue report, flat enough to survive error reporters'
+// normalisation depth (Sentry shows nested entry objects as "[Object]"): every entry
+// that is not idle, as `id:phase[:flags]`, plus how many idle ones there are.
+function queueSummary(): ModalQueueSummary {
+  const active = values().filter(
+    entry => entry.phase !== 'idle' || entry.wanted
+  );
+  return {
+    signals: {
+      ...signals,
+      navigationBusy: navigationBusy(),
+      enabled: !passThrough(),
+    },
+    entries: active.map(entry =>
+      [
+        entry.id,
+        entry.phase,
+        entry.wanted ? 'wanted' : null,
+        bound(entry) ? null : 'unbound',
+        entry.focused ? null : 'unfocused',
+        parentKeyOf(entry) ? `in:${parentKeyOf(entry)}` : null,
+      ]
+        .filter(Boolean)
+        .join(':')
+    ),
+    idle: entries.size - active.length,
+    waiters: waiters.length,
+  };
+}
+
 function issue(
   type: string,
   entry: Entry | null | undefined,
@@ -288,7 +325,7 @@ function issue(
   try {
     reporter.issue(type, {
       ...describe(entry, extra),
-      queue: modalController.inspect(),
+      queue: queueSummary(),
     });
   } catch {
     // reporting must never break presentation
@@ -357,7 +394,20 @@ function mustLeave(entry: Entry): boolean {
 
 const values = (): Entry[] => Array.from(entries.values());
 const anyTransition = (): boolean => values().some(inTransition);
-const navigationBusy = (): boolean => now() < navBusyUntil;
+
+// ms until navigation has settled: the settle window after a route change, or a
+// native-stack screen transition that has not reported its end yet (capped).
+function navigationBusyMs(): number {
+  const at = now();
+  let until = navBusyUntil;
+  screenTransitions.forEach((startedAt, key) => {
+    const end = startedAt + TIMINGS.screenTransitionMaxMs;
+    if (end <= at) screenTransitions.delete(key);
+    else until = Math.max(until, end);
+  });
+  return Math.max(0, until - at);
+}
+const navigationBusy = (): boolean => navigationBusyMs() > 0;
 const rootOccupant = (): Entry | undefined =>
   values().find(entry => isRoot(entry) && onScreen(entry));
 const passThrough = (): boolean => serverPolicy?.enabled === false;
@@ -396,6 +446,8 @@ function ensureEntry(id: string, baseId?: string, instance?: boolean): Entry {
     retried: false,
     failed: false,
     stallReported: false,
+    heldByDesign: false,
+    stallSince: 0,
     waitingSince: now(),
     presentStartedAt: 0,
     openedAt: 0,
@@ -443,11 +495,7 @@ function beginPresent(entry: Entry): void {
   entry.binding?.setNativeVisible(true);
   clearTimer(entry);
   // No watchdog in pass-through mode: there is nothing to serialise or recover.
-  if (!passThrough())
-    entry.timer = setTimeout(
-      () => onPresentTimeout(entry.id),
-      TIMINGS.presentTimeoutMs
-    );
+  armWatchdog(entry);
   touch(entry);
 }
 
@@ -477,10 +525,7 @@ function beginDismiss(entry: Entry): void {
       unmountSettleMs(animationType)
     );
   } else if (isIOS()) {
-    entry.timer = setTimeout(
-      () => onDismissTimeout(entry.id),
-      TIMINGS.dismissTimeoutMs
-    );
+    armWatchdog(entry);
   } else {
     entry.timer = setTimeout(
       () => finishDismiss(entry.id),
@@ -522,10 +567,31 @@ function requeueFailed(): void {
   });
 }
 
+// (Re)starts the watchdog of a native transition in flight. Only presents, and iOS
+// dismissals of a rendered modal, have one: the other dismissals settle on a timer.
+function armWatchdog(entry: Entry): void {
+  if (entry.phase === 'presenting' && !passThrough()) {
+    clearTimer(entry);
+    entry.timer = setTimeout(
+      () => onPresentTimeout(entry.id),
+      TIMINGS.presentTimeoutMs
+    );
+  } else if (entry.phase === 'dismissing' && entry.binding && isIOS()) {
+    clearTimer(entry);
+    entry.timer = setTimeout(
+      () => onDismissTimeout(entry.id),
+      TIMINGS.dismissTimeoutMs
+    );
+  }
+}
+
 function onPresentTimeout(id: string): void {
   const entry = entries.get(id);
   if (!entry || entry.phase !== 'presenting') return;
   entry.timer = null;
+  // iOS finishes the transition (and calls onShow) once the app is active again:
+  // the watchdog restarts then (see setSignals) instead of hiding a modal that is fine.
+  if (!signals.appActive) return;
   if (!entry.retried) {
     // UIKit most likely dropped the presentation: hide and present once more.
     issue('present_timeout', entry, {
@@ -556,6 +622,9 @@ function onExitTimeout(id: string): void {
 function onDismissTimeout(id: string): void {
   const entry = entries.get(id);
   if (!entry || entry.phase !== 'dismissing') return;
+  entry.timer = null;
+  // Same as a present: onDismiss arrives once the app is active again.
+  if (!signals.appActive) return;
   issue('dismiss_timeout', entry);
   finishDismiss(id);
 }
@@ -569,6 +638,16 @@ function blockerName(entry: Entry): string | null {
   return null;
 }
 
+// An automatic prompt waiting its turn rather than starved: held by its own policy
+// (route, splash, app in background, delay), or queued behind a modal the user has on
+// screen or a native modal route. It presents once that is over.
+function promptHeldByDesign(entry: Entry): boolean {
+  if (autoPromptGate(entry) !== true) return true;
+  const occupant = rootOccupant();
+  if (occupant && occupant !== entry && occupant.phase === 'shown') return true;
+  return signals.nativeModalRouteActive;
+}
+
 function checkStall(entry: Entry): void {
   if (
     entry.stallReported ||
@@ -578,8 +657,17 @@ function checkStall(entry: Entry): void {
   )
     return;
   const auto = isAuto(entry);
+  if (auto && promptHeldByDesign(entry)) {
+    entry.heldByDesign = true;
+    return;
+  }
+  if (entry.heldByDesign) {
+    // The stall clock starts when the hold is over, not when the prompt was opened.
+    entry.heldByDesign = false;
+    entry.stallSince = now();
+  }
   const limit = auto ? TIMINGS.promptStallMs : TIMINGS.userStallMs;
-  const waited = now() - entry.waitingSince;
+  const waited = now() - Math.max(entry.waitingSince, entry.stallSince);
   if (waited < limit) {
     schedulePump(limit - waited);
     return;
@@ -587,9 +675,11 @@ function checkStall(entry: Entry): void {
   entry.stallReported = true;
   // A user modal stuck behind another one: a sibling modal opened over a still-open
   // modal (close the first one before opening the next, or nest the second one).
-  // A prompt stuck this long is starved by one that never closes.
+  // A prompt stuck this long with nothing on screen in its way: navigation that never
+  // settles, a host that never renders it, or a transition that never ends.
   issue(auto ? 'prompt_starved' : 'user_modal_blocked', entry, {
     waited_ms: waited,
+    queued_ms: now() - entry.waitingSince,
     blocked_by: blockerName(entry),
   });
 }
@@ -634,7 +724,7 @@ function selectNested(): Entry | undefined {
 function selectRoot(): { entry: Entry | null; wakeInMs: number | null } {
   if (rootOccupant() || signals.nativeModalRouteActive)
     return { entry: null, wakeInMs: null };
-  if (navigationBusy()) return { entry: null, wakeInMs: navBusyUntil - now() };
+  if (navigationBusy()) return { entry: null, wakeInMs: navigationBusyMs() };
   let best: Entry | null = null;
   let wakeInMs: number | null = null;
   const contenders: Entry[] = [];
@@ -756,7 +846,7 @@ function pumpOnce(): void {
     beginPresent(entry);
     return;
   }
-  if (navigationBusy()) schedulePump(navBusyUntil - now());
+  if (navigationBusy()) schedulePump(navigationBusyMs());
   if (typeof wakeInMs === 'number') schedulePump(wakeInMs);
 
   values().forEach(checkStall);
@@ -860,8 +950,9 @@ export const modalController = {
       // Opened by the user over a native modal screen: that screen's host renders it,
       // so it presents inside the screen (as an inline modal did) instead of queueing
       // behind it. Automatic prompts still wait for the screen to close. A modal still
-      // leaving its host stays with it.
-      if (entry.phase === 'idle') {
+      // leaving the host that renders it stays with that host.
+      // Only registry modals have a host; screen-local instances render where they live.
+      if (!entry.instance && (entry.phase === 'idle' || !entry.binding)) {
         entry.hostScope =
           signals.nativeModalRoute && !isAuto(entry)
             ? screenParentKey(signals.nativeModalRoute)
@@ -943,8 +1034,11 @@ export const modalController = {
   createInstance(baseId: string): string {
     sequence += 1;
     const id = `${baseId}#${sequence}`;
+    // No notify: this runs while the owner renders (useModalInstance, a Modal without
+    // a handle), and notifying would update every subscriber mid-render. A new
+    // instance is idle and unbound, so nothing on screen changes; its view is already
+    // readable through getView, and the next real change publishes it.
     ensureEntry(id, baseId, true);
-    notify();
     return id;
   },
 
@@ -1088,6 +1182,49 @@ export const modalController = {
   // -- App signals -----------------------------------------------------------
 
   /**
+   * A native modal screen's host went away (`onlyUnbound: false`, with the ids it
+   * rendered), or its route is no longer on top (`onlyUnbound: true`). The modals the
+   * screen rendered (on screen, still queued or failed to present) close with it; the
+   * ones it never rendered (e.g. opened in the same tick as the screen's `goBack`,
+   * before the navigation signal caught up) fall back to the app's host and present
+   * once the route is gone, instead of waiting for a host that no longer exists.
+   * Called by `ModalHost` and `markNavigationChange`.
+   */
+  releaseScope(
+    scope: string | null | undefined,
+    {
+      onlyUnbound = false,
+      rendered = [],
+    }: { onlyUnbound?: boolean; rendered?: readonly string[] } = {}
+  ): void {
+    if (!scope) return;
+    let changed = false;
+    values().forEach(entry => {
+      if (entry.hostScope !== scope || !entry.wanted || entry.instance) return;
+      if (onlyUnbound) {
+        // Still rendered by the screen's host (the route only got covered): leave it.
+        if (entry.binding) return;
+      } else if (
+        rendered.includes(entry.id) ||
+        entry.binding ||
+        entry.failed ||
+        onScreen(entry)
+      ) {
+        modalController.close(entry.id, { reason: 'host_unmounted' });
+        return;
+      }
+      entry.hostScope = null;
+      breadcrumb('scope_released', entry, { scope });
+      touch(entry);
+      changed = true;
+    });
+    if (changed) {
+      notify();
+      schedulePump(0);
+    }
+  },
+
+  /**
    * Navigation state changed: hold root presents until the transition settles. Only a
    * change of focused route (`routeKey`) or of native modal route counts, so setParams
    * churn can't starve presents. `nativeModalRoute` is the name of the native modal
@@ -1099,6 +1236,7 @@ export const modalController = {
     nativeModalRoute,
     nativeModalRouteActive,
   }: NavigationChange = {}): void {
+    const previousModalRoute = signals.nativeModalRoute;
     const modalRoute = nativeModalRoute || null;
     const modalRouteActive = !!modalRoute || !!nativeModalRouteActive;
     const moved =
@@ -1113,6 +1251,13 @@ export const modalController = {
       nativeModalRouteActive: modalRouteActive,
       nativeModalRoute: modalRoute,
     };
+    if (previousModalRoute && previousModalRoute !== modalRoute) {
+      // Anything scoped to the route that left but not rendered by its host goes back
+      // to the app's host (the host itself releases what it rendered when it unmounts).
+      modalController.releaseScope(screenParentKey(previousModalRoute), {
+        onlyUnbound: true,
+      });
+    }
     if (!moved) {
       schedulePump(0);
       return;
@@ -1123,9 +1268,34 @@ export const modalController = {
     schedulePump(TIMINGS.navigationSettleMs);
   },
 
+  /**
+   * A native-stack screen started (`transitionStart`) or finished (`transitionEnd`)
+   * its transition. Root presents wait for the end: the settle window after a route
+   * change is shorter than a push onto a heavy screen, and a modal presented while
+   * UIKit is still pushing may never report onShow / onDismiss. Usually fed by
+   * `modalScreenListeners`.
+   */
+  markScreenTransition(
+    routeKey: string | null | undefined,
+    running: boolean
+  ): void {
+    if (!routeKey) return;
+    if (running) {
+      screenTransitions.set(routeKey, now());
+      return;
+    }
+    if (screenTransitions.delete(routeKey)) schedulePump(0);
+  },
+
   /** `splashComplete`, `appActive`, `routeName`… */
   setSignals(patch: Partial<ModalSignals>): void {
+    const wasActive = signals.appActive;
     signals = { ...signals, ...patch };
+    if (!wasActive && signals.appActive) {
+      // Back in the foreground: transitions iOS held while the app was away resume
+      // now, so their watchdogs get a full window again.
+      values().forEach(armWatchdog);
+    }
     schedulePump(0);
   },
 
@@ -1242,6 +1412,7 @@ export const modalController = {
     dirty = false;
     signals = { ...initialSignals(), ...configuredSignals };
     navBusyUntil = 0;
+    screenTransitions = new Map();
     lastRouteKey = undefined;
     serverPolicy = null;
     reporter = defaultReporter;

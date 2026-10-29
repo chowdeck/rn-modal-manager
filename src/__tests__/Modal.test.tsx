@@ -5,9 +5,12 @@ import {
   ModalHost,
   ModalParentContext,
   modalController,
+  modalScreenListeners,
   useModal,
   useModalInstance,
+  useModalViews,
 } from '../../index';
+import { TIMINGS } from '../modalController';
 import type { ModalComponentProps, ModalHandle, ModalRegistry } from '../types';
 
 jest.mock('../useReduceMotion', () => ({
@@ -93,6 +96,39 @@ describe('Modal (managed)', () => {
     const [parent, child] = nativeModals(tree);
     expect(parent.props.visible).toBe(true);
     expect(child.props.visible).toBe(true);
+  });
+
+  it('creates a useModalInstance id without updating other components mid-render', () => {
+    // ModalHost subscribes to every view; a sheet created while another component
+    // renders must not notify it synchronously ("Cannot update a component while
+    // rendering a different component").
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const Subscriber = () => {
+      useModalViews();
+      return null;
+    };
+    const Owner = () => {
+      const sheet = useModalInstance('delete_card');
+      return <Text>{sheet.name}</Text>;
+    };
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Subscriber />);
+    });
+    act(() =>
+      tree.update(
+        <>
+          <Subscriber />
+          <Owner />
+        </>
+      )
+    );
+    const renderPhaseUpdates = error.mock.calls.filter(([message]) =>
+      String(message).includes('Cannot update a component')
+    );
+    error.mockRestore();
+    expect(renderPhaseUpdates).toEqual([]);
+    expect(tree.root.findByType(Text).props.children).toBe('delete_card');
   });
 
   it('useModalInstance gives a component its own modal and removes it on unmount', () => {
@@ -302,5 +338,175 @@ describe('ModalHost', () => {
     expect(modalController.isOpen('Greeting')).toBe(false);
     act(() => jest.advanceTimersByTime(1000));
     expect(nativeModals(tree)).toHaveLength(0);
+  });
+
+  describe('closing a native modal route in the same tick as an open', () => {
+    const Screen = ({ open }: { open: boolean }) => (
+      <>
+        <ModalHost registry={registry} />
+        {open ? (
+          <ModalParentContext.Provider value="screen:Plan">
+            <ModalHost registry={registry} scope="screen:Plan" />
+          </ModalParentContext.Provider>
+        ) : null}
+      </>
+    );
+
+    const mountOnRoute = () => {
+      modalController.markNavigationChange({
+        routeName: 'Plan',
+        routeKey: 'plan',
+        nativeModalRoute: 'Plan',
+      });
+      act(() => jest.advanceTimersByTime(500));
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = renderer.create(<Screen open />);
+      });
+      return tree;
+    };
+
+    const leaveRoute = () => {
+      // onStateChange reports the pop only after the commit that removed the screen.
+      act(() =>
+        modalController.markNavigationChange({
+          routeName: 'Home',
+          routeKey: 'home',
+          nativeModalRoute: null,
+        })
+      );
+      act(() => jest.advanceTimersByTime(500));
+    };
+
+    it('presents the modal from the app host once the route is gone (goBack(); open())', () => {
+      const tree = mountOnRoute();
+      act(() => {
+        tree.update(<Screen open={false} />);
+        modalController.open('Greeting', { name: 'after' });
+      });
+      leaveRoute();
+      const modals = nativeModals(tree);
+      expect(modals).toHaveLength(1);
+      expect(modals[0].props.visible).toBe(true);
+      expect(modalController.getView('Greeting').hostScope).toBeNull();
+    });
+
+    it('presents a modal opened after the screen unmounted but before the navigation signal', () => {
+      const tree = mountOnRoute();
+      act(() => tree.update(<Screen open={false} />));
+      act(() => modalController.open('Greeting', { name: 'late' }));
+      expect(modalController.getView('Greeting').hostScope).toBe('screen:Plan');
+      leaveRoute();
+      expect(nativeModals(tree)[0].props.visible).toBe(true);
+    });
+
+    it('closes a stack modal still queued inside the screen instead of showing it on the next screen', () => {
+      // Opened while the route is still settling: bound in the screen's host, waiting.
+      modalController.markNavigationChange({
+        routeName: 'Plan',
+        routeKey: 'plan',
+        nativeModalRoute: 'Plan',
+      });
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = renderer.create(<Screen open />);
+      });
+      act(() => modalController.open('Greeting', { name: 'queued' }));
+      expect(modalController.getView('Greeting').phase).toBe('waiting');
+      act(() => tree.update(<Screen open={false} />));
+      leaveRoute();
+      act(() => jest.advanceTimersByTime(1000));
+      expect(modalController.isOpen('Greeting')).toBe(false);
+      expect(nativeModals(tree)).toHaveLength(0);
+    });
+
+    it('closes a stack modal that failed to present inside the screen', () => {
+      const tree = mountOnRoute();
+      act(() => modalController.open('Greeting', { name: 'dropped' }));
+      // Never reports onShow: retried once, then released as failed.
+      act(() => jest.advanceTimersByTime(10000));
+      expect(modalController.getView('Greeting').phase).toBe('idle');
+      expect(modalController.isOpen('Greeting')).toBe(true);
+      act(() => tree.update(<Screen open={false} />));
+      leaveRoute();
+      act(() => jest.advanceTimersByTime(1000));
+      expect(modalController.isOpen('Greeting')).toBe(false);
+      expect(nativeModals(tree)).toHaveLength(0);
+    });
+
+    it('re-presents a scoped modal re-opened while it was still leaving its closed screen', () => {
+      const tree = mountOnRoute();
+      act(() => modalController.open('Greeting', { name: 'inside' }));
+      flush();
+      act(() => nativeModals(tree)[0].props.onShow());
+      act(() => tree.update(<Screen open={false} />));
+      act(() => modalController.open('Greeting', { name: 'again' }));
+      leaveRoute();
+      act(() => jest.advanceTimersByTime(1000));
+      const modals = nativeModals(tree);
+      expect(modalController.isOpen('Greeting')).toBe(true);
+      expect(modals).toHaveLength(1);
+      expect(modals[0].props.visible).toBe(true);
+    });
+  });
+});
+
+describe('modalScreenListeners', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    modalController.__reset();
+    modalController.setSignals({ splashComplete: true, routeName: 'Home' });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    modalController.setPolicy({ enabled: false });
+  });
+
+  // A root modal opened right after `screen` started appearing; returns whether it is up.
+  const openRootModal = () => {
+    const visibility: Record<string, boolean> = {};
+    modalController.bind('Sheet', {
+      setNativeVisible: value => {
+        visibility.Sheet = value;
+      },
+    });
+    modalController.open('Sheet');
+    return () => !!visibility.Sheet;
+  };
+  const listenersFor = (key: string) =>
+    modalScreenListeners({ route: { key } });
+
+  it('holds root presents while a screen appears, and releases them when it has', () => {
+    const screen = listenersFor('track-1');
+    screen.transitionStart({ data: { closing: false } });
+    const isUp = openRootModal();
+    jest.advanceTimersByTime(TIMINGS.screenTransitionMaxMs - 100);
+    expect(isUp()).toBe(false);
+
+    screen.transitionEnd({ data: { closing: false } });
+    jest.advanceTimersByTime(0);
+    expect(isUp()).toBe(true);
+  });
+
+  it('ignores the screen going away, which may unmount before reporting its end', () => {
+    listenersFor('checkout-1').transitionStart({ data: { closing: true } });
+    const isUp = openRootModal();
+    jest.advanceTimersByTime(0);
+    expect(isUp()).toBe(true);
+  });
+
+  it('releases on a closing end, as when a swipe back is cancelled', () => {
+    // The revealed screen starts appearing, then the gesture is abandoned: it reports a
+    // closing end and never an appearing one.
+    const revealed = listenersFor('home-1');
+    revealed.transitionStart({ data: { closing: false } });
+    const isUp = openRootModal();
+    jest.advanceTimersByTime(100);
+    expect(isUp()).toBe(false);
+
+    revealed.transitionEnd({ data: { closing: true } });
+    jest.advanceTimersByTime(0);
+    expect(isUp()).toBe(true);
   });
 });
