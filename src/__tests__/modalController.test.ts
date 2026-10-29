@@ -37,7 +37,7 @@ describe('modalController', () => {
     jest.useFakeTimers();
     modalController.configure({ policies: TEST_POLICIES });
     modalController.__reset();
-    modalController.setSignals({ splashComplete: true, routeName: 'Home' });
+    modalController.setSignals({ appReady: true, routeName: 'Home' });
     setPlatform('ios');
   });
 
@@ -326,7 +326,7 @@ describe('modalController', () => {
 
   it('holds auto prompts until the splash is done and orders them by priority', () => {
     const { visibility, bind } = setup();
-    modalController.setSignals({ splashComplete: false });
+    modalController.setSignals({ appReady: false });
     const marketing = bind('in_app_message');
     const address = bind('select_address');
     marketing.open();
@@ -334,7 +334,7 @@ describe('modalController', () => {
     tick(1000);
     expect(visibility).toEqual({});
 
-    modalController.setSignals({ splashComplete: true });
+    modalController.setSignals({ appReady: true });
     tick();
     expect(visibility).toEqual({ select_address: true });
   });
@@ -342,7 +342,7 @@ describe('modalController', () => {
   it('treats an instance of a prompt id as a user modal', () => {
     const { visibility, bind } = setup();
     modalController.setSignals({
-      splashComplete: false,
+      appReady: false,
       routeName: 'RestaurantCheckout',
     });
     const id = modalController.createInstance('select_address');

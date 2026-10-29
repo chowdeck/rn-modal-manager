@@ -44,7 +44,7 @@ v2 makes those overlaps impossible. It schedules **native transitions**, not
    once its parent is shown. Root-level siblings queue.
 3. Root-level presents wait for navigation transitions (until the native-stack
    screen reports `transitionEnd`) and for native modal routes.
-4. Automatic prompts also wait for the splash, an active app, route rules, a delay
+4. Automatic prompts also wait for the app to be ready, an active app, route rules, a delay
    and their priority turn. The server can change all of this.
 5. Watchdogs report (and recover from) presents that never complete, dismissals
    that never report back, and modals stuck behind another one. A regression then
@@ -85,6 +85,9 @@ modalController.configure({
     order_rating: { priority: MODAL_PRIORITY.feedback, blockedRoutes: [/Checkout/] },
     in_app_message: { priority: MODAL_PRIORITY.marketing, delayMs: 1200 },
   },
+  // Optional: an app with a splash or launch gate holds prompts until it is over
+  // (see "App readiness"). Without this, prompts may present right away.
+  signals: { appReady: false },
   // Optional: hold modals of unfocused screens (see "Navigation").
   useScreenFocus: () => useContext(NavigationContext),
   // Optional: where breadcrumbs and watchdog issues go. No Sentry dependency.
@@ -116,7 +119,7 @@ export function App() {
   useEffect(() => {
     // Automatic prompts wait for both signals; the watchdogs pause while the app
     // is not active ('inactive' too: iOS reports it while a system prompt is up).
-    modalController.setSignals({ splashComplete: true }); // when your splash is gone
+    modalController.setSignals({ appReady: true }); // when your splash is gone
     const sub = AppState.addEventListener('change', state =>
       modalController.setSignals({ appActive: state === 'active' })
     );
@@ -133,12 +136,20 @@ export function App() {
 }
 ```
 
-> **Splash gate.** Automatic prompts wait for `splashComplete` by default
-> (`waitForSplash` defaults to `true`), and `splashComplete` starts `false`. An app
-> without a splash gate should pass `signals: { splashComplete: true }` to
-> `configure`, or set `waitForSplash: false` on each policy. Otherwise its prompts
-> never show, and nothing reports it: a prompt held by its own policy counts as
-> waiting its turn, not as starved.
+### App readiness
+
+`appReady` says whether automatic prompts may present yet. It **starts `true`**, so
+an app with no launch gate needs nothing.
+
+An app with a splash, onboarding or login gate sets it `false` in `configure` (at
+startup, before any prompt can open) and `true` when the gate is over. Prompts
+opened meanwhile wait; user-opened modals don't. A policy with
+`waitForAppReady: false` (a forced update, say) presents through the gate.
+
+Set it in `configure`, not only with `setSignals`: configured signals survive
+`__reset()` and `testing.reset()`, and a `setSignals({ appReady: false })` from an
+effect runs after the first commit, so a prompt opened in that commit could
+present over the splash.
 
 ## The three ways to use a modal
 
@@ -224,7 +235,7 @@ Policy fields (all optional except `priority`):
 | --- | --- | --- |
 | `priority` | — | Higher presents first. User-opened modals rank at `MODAL_PRIORITY.user` (60). Give each prompt a distinct priority: a tie presents in arrival order and is reported as `priority_tie`. |
 | `delayMs` | `0` | Hold the prompt this long after it is opened. |
-| `waitForSplash` | `true` | Hold until `setSignals({ splashComplete: true })`. |
+| `waitForAppReady` | `true` | Hold while the `appReady` signal is `false` (see [App readiness](#app-readiness)). |
 | `allowedRoutes` | none | Only present on these routes. |
 | `blockedRoutes` | none | Never present on these routes. |
 
@@ -232,7 +243,7 @@ Route patterns are exact route names, `RegExp`s, or regex source wrapped in
 slashes (`"/Checkout/"`, as a server would send it).
 
 The code that decides "should this show now" only calls `open` / `close`. It does
-**not** check whether other modals are visible: the controller gates on splash,
+**not** check whether other modals are visible: the controller gates on app readiness,
 app state, route and priority.
 
 ### 3. Named stack modals: registry + `preset`
@@ -388,8 +399,10 @@ modalController.setPolicy(remoteConfig.modal_policy);
 ```
 
 - Each entry under `modals` overrides one prompt's `enabled`, `priority`,
-  `delay_ms`, `wait_for_splash`, `allowed_routes` or `blocked_routes`. An empty
-  route list lifts the shipped restriction.
+  `delay_ms`, `wait_for_app_ready`, `allowed_routes` or `blocked_routes`. An empty
+  route list lifts the shipped restriction. The customer app's older
+  `wait_for_splash` key is still read; `wait_for_app_ready` wins when both are
+  set.
 - **`enabled: false` at the top level is the kill switch.** The controller stops
   serialising and gating, and honours every open and close at once, like plain
   React Native. The present watchdog is off. `modalController.isEnabled()`
@@ -449,7 +462,7 @@ modalController.getView(id);          // synchronous, frozen view
     Close the first before opening the next, or nest the second inside it.
   - `prompt_starved`: a prompt is stuck with nothing on screen in its way:
     navigation that never settles, a host that never renders it, or a transition
-    that never ends. A prompt held by its own policy (route, splash, delay,
+    that never ends. A prompt held by its own policy (route, app readiness, delay,
     background) or queued behind a modal on screen or a native modal route is
     waiting its turn, not starved. Its stall clock starts when that hold ends.
     Issues carry `waited_ms` (since the hold ended) and `queued_ms` (since it was
@@ -473,10 +486,10 @@ import { testing } from 'rn-modal-manager';
 beforeEach(() => testing.reset({ passThrough: true }));
 ```
 
-- `testing.reset({ passThrough, splashComplete = true })` calls
-  `modalController.__reset()`. That clears every entry, timer, listener and signal,
-  plus the server policy and the reporter. Configured policies, timings and the
-  focus hook are kept. Then it sets the signals and pass-through mode.
+- `testing.reset({ passThrough, appReady })` calls `modalController.__reset()`.
+  That clears every entry, timer, listener and signal, plus the server policy and
+  the reporter. Configured policies, signals, timings and the focus hook are kept.
+  Then it applies `appReady` if given, and pass-through mode.
 - `testing.enablePassThrough()` is the same as `modalController.setPolicy({ enabled: false })`.
 - `testing.completeTransitions()` finishes every transition in flight, as if the
   platform had called `onShow` / `onDismiss`. Useful with the controller enabled.

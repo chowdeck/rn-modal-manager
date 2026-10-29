@@ -31,7 +31,7 @@ describe('Modal (managed)', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     modalController.__reset();
-    modalController.setSignals({ splashComplete: true, routeName: 'Home' });
+    modalController.setSignals({ appReady: true, routeName: 'Home' });
   });
 
   afterEach(() => {
@@ -181,7 +181,7 @@ describe('ModalHost', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     modalController.__reset();
-    modalController.setSignals({ splashComplete: true, routeName: 'Home' });
+    modalController.setSignals({ appReady: true, routeName: 'Home' });
   });
 
   afterEach(() => {
@@ -455,7 +455,7 @@ describe('modalScreenListeners', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     modalController.__reset();
-    modalController.setSignals({ splashComplete: true, routeName: 'Home' });
+    modalController.setSignals({ appReady: true, routeName: 'Home' });
   });
 
   afterEach(() => {

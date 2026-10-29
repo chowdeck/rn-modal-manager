@@ -82,7 +82,10 @@ export const resolveModalPolicy = (
     enabled: override.enabled !== false,
     priority: Number(pick(override.priority, base.priority)) || 0,
     delayMs: Number(pick(override.delay_ms, base.delayMs || 0)) || 0,
-    waitForSplash: pick(override.wait_for_splash, base.waitForSplash !== false),
+    waitForAppReady: pick(
+      override.wait_for_app_ready ?? override.wait_for_splash,
+      base.waitForAppReady !== false
+    ),
     allowedRoutes: routeList(pick(override.allowed_routes, base.allowedRoutes)),
     blockedRoutes: routeList(pick(override.blocked_routes, base.blockedRoutes)),
   };

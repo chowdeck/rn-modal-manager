@@ -14,7 +14,7 @@ const tick = (ms = 0) => jest.advanceTimersByTime(ms);
 describe('modalController.configure', () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    modalController.configure({ policies: {}, signals: {} });
+    modalController.configure({ policies: {}, signals: { appReady: true } });
     modalController.__reset();
     Object.keys(visibility).forEach(key => delete visibility[key]);
   });
@@ -24,7 +24,8 @@ describe('modalController.configure', () => {
   });
 
   it('makes no id an automatic prompt until policies are configured', () => {
-    // Splash not complete: a prompt would wait, a user modal does not.
+    // App not ready: a prompt would wait, a user modal does not.
+    modalController.configure({ signals: { appReady: false } });
     bind('promo');
     modalController.open('promo');
     tick();
@@ -36,9 +37,19 @@ describe('modalController.configure', () => {
     });
   });
 
+  it('starts ready: prompts present without any signal', () => {
+    expect(modalController.getSignals().appReady).toBe(true);
+    modalController.configure({ policies: { promo: { priority: 10 } } });
+    bind('promo');
+    modalController.open('promo');
+    tick();
+    expect(visibility.promo).toBe(true);
+  });
+
   it('turns the configured ids into automatic prompts', () => {
     modalController.configure({
       policies: { promo: { priority: MODAL_PRIORITY.marketing } },
+      signals: { appReady: false },
     });
     bind('promo');
     modalController.open('promo');
@@ -49,7 +60,7 @@ describe('modalController.configure', () => {
       priority: MODAL_PRIORITY.marketing,
     });
 
-    modalController.setSignals({ splashComplete: true });
+    modalController.setSignals({ appReady: true });
     tick();
     expect(visibility.promo).toBe(true);
   });
@@ -65,23 +76,31 @@ describe('modalController.configure', () => {
   it('keeps policies across __reset and re-applies configured signals', () => {
     modalController.configure({
       policies: { promo: { priority: 10 } },
-      signals: { splashComplete: true },
+      signals: { appReady: false },
     });
-    modalController.setSignals({ splashComplete: false });
+    modalController.setSignals({ appReady: true });
     modalController.__reset();
     expect(modalController.resolvePolicy('promo').known).toBe(true);
-    expect(modalController.getSignals().splashComplete).toBe(true);
+    expect(modalController.getSignals().appReady).toBe(false);
     bind('promo');
     modalController.open('promo');
+    tick(5000);
+    expect(visibility.promo).toBeUndefined();
+  });
+
+  it('lets a policy opt out of waiting for the app', () => {
+    modalController.configure({
+      policies: { update: { priority: 100, waitForAppReady: false } },
+      signals: { appReady: false },
+    });
+    bind('update');
+    modalController.open('update');
     tick();
-    expect(visibility.promo).toBe(true);
+    expect(visibility.update).toBe(true);
   });
 
   it('lets the server switch a configured prompt off', () => {
-    modalController.configure({
-      policies: { promo: { priority: 10 } },
-      signals: { splashComplete: true },
-    });
+    modalController.configure({ policies: { promo: { priority: 10 } } });
     modalController.setPolicy({ modals: { promo: { enabled: false } } });
     bind('promo');
     modalController.open('promo');
@@ -117,7 +136,7 @@ describe('resolveModalPolicy / matchesRoute', () => {
       priority: 35,
       delayMs: 500,
       blockedRoutes: [/Checkout/],
-      waitForSplash: false,
+      waitForAppReady: false,
     },
   };
 
@@ -127,7 +146,7 @@ describe('resolveModalPolicy / matchesRoute', () => {
       enabled: true,
       priority: 35,
       delayMs: 500,
-      waitForSplash: false,
+      waitForAppReady: false,
       allowedRoutes: null,
       blockedRoutes: [/Checkout/],
     });
@@ -153,6 +172,18 @@ describe('resolveModalPolicy / matchesRoute', () => {
       // An empty server list means "no restriction": it lifts the shipped one.
       blockedRoutes: null,
     });
+  });
+
+  it('reads wait_for_app_ready, and the older wait_for_splash key', () => {
+    const resolve = (override: Record<string, boolean>) =>
+      resolveModalPolicy('rating', { modals: { rating: override } }, policies)
+        .waitForAppReady;
+    expect(resolve({})).toBe(false);
+    expect(resolve({ wait_for_app_ready: true })).toBe(true);
+    expect(resolve({ wait_for_splash: true })).toBe(true);
+    expect(resolve({ wait_for_app_ready: false, wait_for_splash: true })).toBe(
+      false
+    );
   });
 
   it('treats unknown ids as user modals at the default priority', () => {
@@ -182,6 +213,18 @@ describe('testing helpers', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('reset() keeps a configured appReady unless told otherwise', () => {
+    modalController.configure({ signals: { appReady: false } });
+    try {
+      testing.reset();
+      expect(modalController.getSignals().appReady).toBe(false);
+      testing.reset({ appReady: true });
+      expect(modalController.getSignals().appReady).toBe(true);
+    } finally {
+      modalController.configure({ signals: { appReady: true } });
+    }
   });
 
   it('reset({ passThrough }) honours every open at once', () => {

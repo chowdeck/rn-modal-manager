@@ -42,7 +42,7 @@ import type {
  * 3. Root-level presents wait for navigation transitions (until the native-stack
  *    screen reports `transitionEnd`) and native-stack modal routes to settle.
  * 4. Automatic prompts (ids with a policy, see `configure({ policies })`)
- *    additionally wait for the splash, an active app, route rules and their
+ *    additionally wait for the app to be ready, an active app, route rules and their
  *    priority turn, all overridable from the server (`setPolicy`).
  *
  * State model: one entry per modal, keyed by id. `open(id, params)` / `close(id)`
@@ -132,7 +132,7 @@ const IDLE_VIEW: ModalView = Object.freeze({
 });
 
 const initialSignals = (): ModalSignals => ({
-  splashComplete: false,
+  appReady: true,
   appActive: true,
   routeName: undefined,
   nativeModalRouteActive: false,
@@ -639,7 +639,7 @@ function blockerName(entry: Entry): string | null {
 }
 
 // An automatic prompt waiting its turn rather than starved: held by its own policy
-// (route, splash, app in background, delay), or queued behind a modal the user has on
+// (route, app not ready, app in background, delay), or queued behind a modal the user has on
 // screen or a native modal route. It presents once that is over.
 function promptHeldByDesign(entry: Entry): boolean {
   if (autoPromptGate(entry) !== true) return true;
@@ -688,7 +688,7 @@ function checkStall(entry: Entry): void {
 function autoPromptGate(entry: Entry): boolean | number {
   const policy = policyFor(entry);
   if (!policy.enabled) return false;
-  if (policy.waitForSplash && !signals.splashComplete) return false;
+  if (policy.waitForAppReady && !signals.appReady) return false;
   if (!signals.appActive) return false;
   if (
     policy.allowedRoutes &&
@@ -1287,7 +1287,7 @@ export const modalController = {
     if (screenTransitions.delete(routeKey)) schedulePump(0);
   },
 
-  /** `splashComplete`, `appActive`, `routeName`… */
+  /** `appReady`, `appActive`, `routeName`… */
   setSignals(patch: Partial<ModalSignals>): void {
     const wasActive = signals.appActive;
     signals = { ...signals, ...patch };

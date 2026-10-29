@@ -14,14 +14,17 @@ export type RoutePattern = string | RegExp;
 
 /**
  * Shipped policy for an automatic prompt. Any id with a policy is an automatic
- * prompt: on top of the one-presentation-at-a-time rule it waits for the splash, an
+ * prompt: on top of the one-presentation-at-a-time rule it waits for the app to be ready, an
  * active app, an allowed route, its delay and its priority turn.
  */
 export interface ModalPolicy {
   priority: number;
   delayMs?: number;
-  /** Defaults to true: hold the prompt until `setSignals({ splashComplete: true })`. */
-  waitForSplash?: boolean;
+  /**
+   * Defaults to true: hold the prompt while the `appReady` signal is false (a
+   * splash, onboarding or login gate).
+   */
+  waitForAppReady?: boolean;
   allowedRoutes?: RoutePattern[];
   blockedRoutes?: RoutePattern[];
 }
@@ -33,6 +36,8 @@ export interface ServerModalPolicyOverride {
   enabled?: boolean;
   priority?: number;
   delay_ms?: number;
+  wait_for_app_ready?: boolean;
+  /** @deprecated The customer app's original key; `wait_for_app_ready` wins. */
   wait_for_splash?: boolean;
   allowed_routes?: RoutePattern[];
   blocked_routes?: RoutePattern[];
@@ -54,7 +59,7 @@ export interface ResolvedModalPolicy {
   enabled: boolean;
   priority: number;
   delayMs: number;
-  waitForSplash: boolean;
+  waitForAppReady: boolean;
   allowedRoutes: RoutePattern[] | null;
   blockedRoutes: RoutePattern[] | null;
 }
@@ -119,7 +124,11 @@ export type ModalRef = { readonly id: string } | string | null | undefined;
 
 /** Signals the app feeds the controller. */
 export interface ModalSignals {
-  splashComplete: boolean;
+  /**
+   * Whether automatic prompts may present yet. Starts true; an app with a splash or
+   * other launch gate sets it false in `configure({ signals })` and true once ready.
+   */
+  appReady: boolean;
   appActive: boolean;
   routeName: string | undefined;
   nativeModalRouteActive: boolean;
@@ -190,7 +199,7 @@ export interface ModalControllerConfig {
   /** The automatic prompts and their policies. Replaces the previous set. */
   policies?: ModalPolicies;
   reporter?: Partial<ModalReporter>;
-  /** Initial signal values, e.g. `{ splashComplete: true }` for apps without a splash gate. */
+  /** Initial signal values, e.g. `{ appReady: false }` for an app with a splash gate. */
   signals?: Partial<ModalSignals>;
   /** See `UseScreenFocus`. Set once, before the first `<Modal>` renders. */
   useScreenFocus?: UseScreenFocus | null;

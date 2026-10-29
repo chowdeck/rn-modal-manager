@@ -25,14 +25,15 @@ export const testing = {
 
   /**
    * Clears every entry, timer, signal, listener, the server policy and the reporter
-   * (`modalController.__reset()`). Configured policies are kept.
+   * (`modalController.__reset()`). Configured policies and signals are kept;
+   * `appReady` overrides the configured value when given.
    */
   reset({
     passThrough = false,
-    splashComplete = true,
-  }: { passThrough?: boolean; splashComplete?: boolean } = {}): void {
+    appReady,
+  }: { passThrough?: boolean; appReady?: boolean } = {}): void {
     modalController.__reset();
-    modalController.setSignals({ splashComplete });
+    if (appReady !== undefined) modalController.setSignals({ appReady });
     if (passThrough) testing.enablePassThrough();
   },
 
