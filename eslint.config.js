@@ -58,6 +58,8 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
       
       // General rules
+      // TypeScript checks undefined names itself (and knows RN/DOM/Jest globals).
+      'no-undef': 'off',
       'no-console': 'warn',
       'prefer-const': 'error',
       'no-var': 'error',
@@ -84,6 +86,8 @@ export default [
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+      // Test components capture the handle they render into the test's scope.
+      'react-hooks/globals': 'off',
     },
   },
   prettierConfig,
